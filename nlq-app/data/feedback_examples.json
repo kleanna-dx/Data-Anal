@@ -1,0 +1,8 @@
+[
+  {
+    "question": "사업부별 원가 구성 분석",
+    "original_sql": "SELECT PROFIT_CTR FROM...",
+    "corrected_sql": "SELECT CASE WHEN PROFIT_CTR = '0000001000' THEN '제지사업부' WHEN PROFIT_CTR = '0000002000' THEN '생활용품사업부' ELSE PROFIT_CTR END AS 사업부, SUM(ZAMT006) AS 재료비_펄프, SUM(ZAMT007) AS 재료비_고지, SUM(ZAMT012) AS 인건비, SUM(ZAMT016) AS 에너지비, SUM(ZAMT034) AS 매출원가계 FROM MOD_BOARD_PROFIT_ANALYSIS GROUP BY PROFIT_CTR ORDER BY 매출원가계 DESC",
+    "timestamp": "2026-03-18 06:16:38"
+  }
+]

@@ -1,0 +1,412 @@
+{
+  "columns": {
+    "PROFIT_CTR": {
+      "label": "손익 센터",
+      "description": "손익 센터 코드",
+      "values": {
+        "0000001000": {
+          "label": "제지사업부",
+          "count": 35132
+        },
+        "0000002000": {
+          "label": "생활용품사업부",
+          "count": 191679
+        }
+      }
+    },
+    "DIVISION": {
+      "label": "제품군/사업부",
+      "description": "사업부 구분 코드",
+      "values": {
+        "10": {
+          "label": "제지",
+          "count": 35132
+        },
+        "20": {
+          "label": "생활용품",
+          "count": 191679
+        }
+      }
+    },
+    "ZDISTCHAN": {
+      "label": "내수/수출구분",
+      "description": "유통 채널 (내수/수출)",
+      "values": {
+        "10": {
+          "label": "내수",
+          "count": 222281
+        },
+        "20": {
+          "label": "수출",
+          "count": 4333
+        },
+        "NULL": {
+          "label": "미분류",
+          "count": 197
+        }
+      }
+    },
+    "PLANT": {
+      "label": "플랜트/공장",
+      "description": "생산 공장 코드",
+      "values": {
+        "P100": {
+          "label": "P100 공장",
+          "count": 24441
+        },
+        "P200": {
+          "label": "P200 공장",
+          "count": 63611
+        },
+        "P300": {
+          "label": "P300 공장",
+          "count": 31257
+        },
+        "P400": {
+          "label": "P400 공장",
+          "count": 69737
+        },
+        "P500": {
+          "label": "P500 공장",
+          "count": 304
+        },
+        "NULL": {
+          "label": "미지정",
+          "count": 37461
+        }
+      }
+    },
+    "MATL_TYPE": {
+      "label": "자재유형",
+      "description": "자재 분류 유형",
+      "values": {
+        "FERT": {
+          "label": "완제품",
+          "count": 146362
+        },
+        "HAWA": {
+          "label": "상품",
+          "count": 70545
+        },
+        "HALB": {
+          "label": "반제품",
+          "count": 9191
+        },
+        "NULL": {
+          "label": "미분류",
+          "count": 713
+        }
+      }
+    },
+    "COUNTRY": {
+      "label": "국가",
+      "description": "거래 국가 코드",
+      "values": {
+        "KR": {
+          "label": "한국",
+          "count": 222318
+        },
+        "VN": {
+          "label": "베트남",
+          "count": 1243
+        },
+        "TH": {
+          "label": "태국",
+          "count": 644
+        },
+        "PH": {
+          "label": "필리핀",
+          "count": 458
+        },
+        "MY": {
+          "label": "말레이시아",
+          "count": 290
+        },
+        "JP": {
+          "label": "일본",
+          "count": 278
+        },
+        "US": {
+          "label": "미국",
+          "count": 255
+        },
+        "CN": {
+          "label": "중국",
+          "count": 244
+        },
+        "HK": {
+          "label": "홍콩",
+          "count": 182
+        }
+      }
+    },
+    "CALMONTH": {
+      "label": "달력연도/월",
+      "description": "데이터 기준 월",
+      "values": {
+        "202405": {
+          "label": "2024년 5월",
+          "count": 226811
+        }
+      }
+    },
+    "CALDAY": {
+      "label": "달력일",
+      "description": "데이터 기준 일자 (20240501~20240531)",
+      "values": {}
+    },
+    "ZORG_TEAM": {
+      "label": "영업팀",
+      "description": "영업 조직 팀 코드",
+      "values": {
+        "9101": {
+          "label": "영업1팀",
+          "count": 114505
+        },
+        "9102": {
+          "label": "영업2팀",
+          "count": 30040
+        },
+        "9103": {
+          "label": "영업3팀",
+          "count": 14556
+        },
+        "9104": {
+          "label": "영업4팀",
+          "count": 3089
+        },
+        "9105": {
+          "label": "영업5팀",
+          "count": 28895
+        },
+        "8101": {
+          "label": "해외영업1팀",
+          "count": 17954
+        },
+        "8102": {
+          "label": "해외영업2팀",
+          "count": 13242
+        },
+        "8201": {
+          "label": "해외마케팅팀",
+          "count": 3921
+        },
+        "9201": {
+          "label": "특수영업팀",
+          "count": 412
+        }
+      }
+    },
+    "CUST_GROUP": {
+      "label": "고객 그룹",
+      "description": "고객 분류 그룹",
+      "values": {
+        "01": {
+          "label": "고객그룹01",
+          "count": 10087
+        },
+        "02": {
+          "label": "고객그룹02",
+          "count": 19897
+        },
+        "03": {
+          "label": "고객그룹03",
+          "count": 72633
+        },
+        "04": {
+          "label": "고객그룹04",
+          "count": 6561
+        },
+        "05": {
+          "label": "고객그룹05",
+          "count": 15390
+        },
+        "06": {
+          "label": "고객그룹06",
+          "count": 29985
+        },
+        "07": {
+          "label": "고객그룹07",
+          "count": 5029
+        },
+        "08": {
+          "label": "고객그룹08",
+          "count": 14916
+        },
+        "10": {
+          "label": "고객그룹10",
+          "count": 14368
+        },
+        "51": {
+          "label": "고객그룹51",
+          "count": 27989
+        }
+      }
+    },
+    "ZBRAND1": {
+      "label": "브랜드1",
+      "description": "브랜드 코드",
+      "values": {
+        "BRH002": {
+          "label": "BRH002",
+          "count": 115467
+        },
+        "BRH003": {
+          "label": "BRH003",
+          "count": 15679
+        },
+        "BRH005": {
+          "label": "BRH005",
+          "count": 35966
+        },
+        "BRH006": {
+          "label": "BRH006",
+          "count": 21184
+        },
+        "BRH012": {
+          "label": "BRH012",
+          "count": 477
+        },
+        "BRH015": {
+          "label": "BRH015",
+          "count": 455
+        },
+        "BRH081": {
+          "label": "BRH081",
+          "count": 184
+        },
+        "BRH099": {
+          "label": "BRH099",
+          "count": 548
+        }
+      }
+    },
+    "BILL_TYPE": {
+      "label": "대금청구유형",
+      "description": "청구서 유형 코드",
+      "values": {
+        "ZF1": {
+          "label": "ZF1",
+          "count": 10502
+        },
+        "ZF2": {
+          "label": "ZF2",
+          "count": 124317
+        },
+        "ZF3": {
+          "label": "ZF3",
+          "count": 2075
+        },
+        "ZF5": {
+          "label": "ZF5",
+          "count": 8279
+        },
+        "ZFB": {
+          "label": "ZFB",
+          "count": 656
+        },
+        "ZFD": {
+          "label": "ZFD",
+          "count": 580
+        },
+        "ZRE": {
+          "label": "ZRE",
+          "count": 752
+        },
+        "ZRE2": {
+          "label": "ZRE2",
+          "count": 622
+        },
+        "S1": {
+          "label": "S1",
+          "count": 7949
+        },
+        "NULL": {
+          "label": "미분류",
+          "count": 70951
+        }
+      }
+    }
+  },
+  "amount_columns": {
+    "ZAMT001": "총매출",
+    "ZAMT002": "판매장려금",
+    "ZAMT003": "순매출",
+    "ZAMT004": "기타매출",
+    "ZAMT005": "매출원가(제품)",
+    "ZAMT006": "재료비-펄프",
+    "ZAMT007": "재료비-고지",
+    "ZAMT008": "재료비-패드",
+    "ZAMT009": "부재료비-약품",
+    "ZAMT010": "부재료비-포장재",
+    "ZAMT011": "재료비-기타",
+    "ZAMT012": "인건비",
+    "ZAMT013": "인건비_경비",
+    "ZAMT014": "인건비_기타",
+    "ZAMT015": "도급비",
+    "ZAMT016": "에너지비",
+    "ZAMT017": "전력비",
+    "ZAMT018": "감가상각비",
+    "ZAMT019": "수선/소모품비",
+    "ZAMT020": "기타경비",
+    "ZAMT021": "기타경비_폐기물",
+    "ZAMT022": "기타경비_세금과공과",
+    "ZAMT023": "기타경비_지급수수료",
+    "ZAMT024": "외주가공비",
+    "ZAMT025": "매출원가(상품)",
+    "ZAMT026": "매출원가(기타)",
+    "ZAMT027": "기타원가",
+    "ZAMT028": "단수차이",
+    "ZAMT029": "차이잔액",
+    "ZAMT030": "제조파지정산",
+    "ZAMT031": "기타매출원가+감모손+평가손",
+    "ZAMT032": "원재료투입차이",
+    "ZAMT033": "기타매출원가배부조",
+    "ZAMT034": "매출원가계",
+    "ZAMT035": "매출총이익",
+    "ZAMT036": "판매관리비",
+    "ZAMT037": "급여(변동)",
+    "ZAMT038": "국내운반비(변동)",
+    "ZAMT039": "수출운반비(변동)",
+    "ZAMT040": "지급수수료(변동)",
+    "ZAMT041": "기타판관비(변동)",
+    "ZAMT042": "개발비(변동)",
+    "ZAMT043": "급여(고정)",
+    "ZAMT044": "지급수수료(고정)",
+    "ZAMT045": "기타판관비(고정)",
+    "ZAMT046": "개발비(고정)",
+    "ZAMT047": "마케팅비",
+    "ZAMT048": "광고비",
+    "ZAMT049": "소모품비",
+    "ZAMT050": "지급수수료-마케팅(변동)",
+    "ZAMT051": "지급수수료-마케팅(고정)",
+    "ZAMT052": "마케팅비_장려금(변동)",
+    "ZAMT053": "판촉비",
+    "ZAMT054": "마케팅비배부조정",
+    "ZAMT055": "영업이익",
+    "ZAMT056": "영업외수익",
+    "ZAMT057": "이자수익",
+    "ZAMT058": "외환이익",
+    "ZAMT059": "기타영업외수익",
+    "ZAMT060": "영업외비용",
+    "ZAMT061": "이자비용",
+    "ZAMT062": "외환손실",
+    "ZAMT063": "기타영업외비용",
+    "ZAMT064": "경상이익"
+  },
+  "business_rules": [
+    "반드시 단일 SELECT 문만 생성. INSERT/UPDATE/DELETE/DROP 절대 금지.",
+    "집계 쿼리에는 반드시 GROUP BY 사용. HAVING 필요 시 추가.",
+    "결과가 많을 수 있으면 LIMIT 1000 추가. 전체 합계/집계는 LIMIT 불필요.",
+    "PROFIT_CTR, ZDISTCHAN, DIVISION 등 코드값은 반드시 CASE WHEN으로 한글 변환.",
+    "큰 금액(억 단위)은 FORMAT(값, 0)으로 천단위 구분 표시. 단, 차트용 숫자 컬럼은 FORMAT 미적용.",
+    "컬럼 alias는 항상 한글로 직관적 이름 부여 (예: AS 총매출, AS 사업부).",
+    "NULL 데이터가 있는 컬럼(PLANT, MATERIAL, ZDISTCHAN 등)은 WHERE 조건이나 COALESCE로 처리 고려.",
+    "날짜 컬럼(CALDAY)은 VARCHAR이므로 ORDER BY CALDAY ASC로 시계열 정렬.",
+    "수량 조회 시 주로 ZQTYKGEA(KG/EA) 사용. BOX 수량은 ZQTYBOX.",
+    "제품명 검색은 MATERIAL_DESC LIKE '%키워드%' 사용.",
+    "\"매출\"이라고만 하면 ZAMT001(총매출), \"순매출\"은 ZAMT003, \"매출총이익\"은 ZAMT035.",
+    "\"원가\"라고만 하면 ZAMT034(매출원가계), 세부 원가는 개별 컬럼 사용.",
+    "반드시 SQL만 출력. 설명, 마크다운 펜스(```), 주석 없이 순수 SQL만."
+  ]
+}

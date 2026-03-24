@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>수익성분석 자연어 조회</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --bg: #f1f5f9;
+            --card: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: 'Pretendard', 'Segoe UI', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, var(--primary), #7c3aed);
+            color: white;
+            padding: 28px 0 24px;
+            text-align: center;
+            box-shadow: 0 4px 16px rgba(37,99,235,0.25);
+        }
+        .header h1 { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; }
+        .header p { font-size: 0.85rem; opacity: 0.85; margin-top: 8px; }
+        .header .status-bar {
+            margin-top: 12px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            font-size: 0.75rem;
+            opacity: 0.9;
+        }
+        .header .status-dot {
+            display: inline-block;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+        .header .status-dot.ok { background: #4ade80; }
+        .header .status-dot.err { background: #f87171; }
+        .header .status-dot.unknown { background: #fbbf24; }
+
+        .container { max-width: 1340px; margin: 0 auto; padding: 24px 16px; }
+
+        /* Mode Toggle */
+        .mode-toggle {
+            display: flex;
+            justify-content: center;
+            gap: 4px;
+            margin-bottom: 20px;
+            background: var(--card);
+            border-radius: 12px;
+            padding: 4px;
+            display: inline-flex;
+            margin-left: 50%;
+            transform: translateX(-50%);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+        .mode-btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background: transparent;
+            color: var(--text-light);
+            transition: all 0.2s;
+        }
+        .mode-btn.active {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+        }
+
+        /* Query Section */
+        .query-section {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            margin-bottom: 24px;
+        }
+        .query-section.hidden { display: none; }
+        .input-group {
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+        }
+        .input-group input, .input-group textarea {
+            flex: 1;
+            padding: 14px 20px;
+            font-size: 1rem;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            outline: none;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+        .input-group textarea {
+            min-height: 80px;
+            resize: vertical;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9rem;
+        }
+        .input-group input:focus, .input-group textarea:focus { border-color: var(--primary); }
+        .input-group button {
+            padding: 14px 32px;
+            background: var(--primary);
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .input-group button:hover { background: var(--primary-dark); transform: translateY(-1px); }
+        .input-group button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .examples {
+            margin-top: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .examples span.label {
+            font-size: 0.8rem;
+            color: var(--text-light);
+            line-height: 1.8;
+        }
+        .example-chip {
+            display: inline-block;
+            padding: 6px 14px;
+            background: #f0f4ff;
+            color: var(--primary);
+            border-radius: 20px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid #dbeafe;
+        }
+        .example-chip:hover {
+            background: #dbeafe;
+            border-color: var(--primary);
+            transform: translateY(-1px);
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 48px;
+            background: var(--card);
+            border-radius: 16px;
+            margin-bottom: 24px;
+        }
+        .loading.active { display: block; }
+        .spinner {
+            width: 48px; height: 48px;
+            border: 4px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading p { color: var(--text-light); font-size: 0.9rem; }
+        .loading .loading-steps { margin-top: 16px; font-size: 0.8rem; color: #94a3b8; }
+
+        /* SQL Display */
+        .sql-section {
+            background: #0f172a;
+            color: #e2e8f0;
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 24px;
+            display: none;
+            position: relative;
+            border: 1px solid #1e293b;
+        }
+        .sql-section.active { display: block; }
+        .sql-section pre {
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.7;
+        }
+        .sql-section pre .keyword { color: #7dd3fc; font-weight: bold; }
+        .sql-label {
+            position: absolute;
+            top: 10px; right: 14px;
+            background: #1e293b;
+            color: #7dd3fc;
+            font-size: 0.72rem;
+            padding: 4px 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 10px; right: 110px;
+            background: #334155;
+            color: #94a3b8;
+            font-size: 0.72rem;
+            padding: 4px 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .copy-btn:hover { background: #475569; color: #e2e8f0; }
+
+        /* Results */
+        .results-section { display: none; }
+        .results-section.active { display: block; }
+        .result-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            font-size: 0.85rem;
+            color: var(--text-light);
+        }
+        .result-meta .count {
+            background: var(--success);
+            color: white;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 0.82rem;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 0;
+        }
+        .tab-btn {
+            padding: 12px 28px;
+            background: #e2e8f0;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-light);
+            transition: all 0.2s;
+        }
+        .tab-btn:first-child { border-radius: 12px 0 0 0; }
+        .tab-btn:last-child { border-radius: 0 12px 0 0; }
+        .tab-btn.active {
+            background: var(--card);
+            color: var(--primary);
+            font-weight: 700;
+        }
+        .tab-content {
+            background: var(--card);
+            border-radius: 0 12px 12px 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+
+        /* Table */
+        .table-wrap {
+            overflow-x: auto;
+            padding: 4px;
+            display: none;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .table-wrap.active { display: block; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.83rem;
+        }
+        thead th {
+            background: #f8fafc;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 700;
+            color: var(--text);
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        tbody td {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        tbody tr:hover { background: #eff6ff; }
+        tbody tr:nth-child(even) { background: #fafbfc; }
+        tbody tr:nth-child(even):hover { background: #eff6ff; }
+        td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'Fira Code', monospace; font-size: 0.8rem; }
+
+        /* Chart */
+        .chart-wrap {
+            padding: 28px;
+            display: none;
+            min-height: 420px;
+        }
+        .chart-wrap.active { display: block; }
+        .chart-container {
+            position: relative;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        /* Error */
+        .error-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            border-radius: 14px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            display: none;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        .error-box.active { display: block; }
+        .error-box b { color: var(--error); }
+        .error-box code {
+            display: block;
+            margin-top: 12px;
+            padding: 12px;
+            background: #1e293b;
+            color: #fca5a5;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            overflow-x: auto;
+        }
+
+        /* Schema toggle */
+        .schema-toggle {
+            background: var(--card);
+            border-radius: 14px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+        .schema-toggle summary {
+            padding: 18px 24px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-light);
+            user-select: none;
+        }
+        .schema-toggle summary:hover { background: #f8fafc; }
+        .schema-content {
+            max-height: 320px;
+            overflow-y: auto;
+            padding: 0 24px 16px;
+        }
+        .schema-content table { font-size: 0.76rem; }
+        .schema-content th { padding: 8px 12px; }
+        .schema-content td { padding: 6px 12px; }
+
+        /* History */
+        .history-section {
+            background: var(--card);
+            border-radius: 14px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            display: none;
+        }
+        .history-section.active { display: block; }
+        .history-section h3 { font-size: 0.85rem; color: var(--text-light); margin-bottom: 12px; }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.82rem;
+            transition: background 0.15s;
+        }
+        .history-item:hover { background: #f0f4ff; }
+        .history-item .q { color: var(--text); flex: 1; }
+        .history-item .info { color: #94a3b8; font-size: 0.72rem; white-space: nowrap; margin-left: 12px; }
+
+        /* Feedback Section */
+        .feedback-bar {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 14px 20px;
+            background: var(--card);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        }
+        .feedback-bar.active { display: flex; flex-wrap: wrap; }
+        .feedback-bar .fb-label { font-size: 0.82rem; color: var(--text-light); }
+        .fb-btn {
+            padding: 6px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            background: #f8fafc;
+        }
+        .fb-btn:hover { background: #eff6ff; border-color: var(--primary); }
+        .fb-btn.good { color: var(--success); }
+        .fb-btn.edit { color: var(--primary); }
+        .fb-btn.good.selected { background: #d1fae5; border-color: var(--success); }
+
+        /* SQL Edit Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-content {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 28px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .modal-content h3 { margin-bottom: 16px; font-size: 1.1rem; }
+        .modal-content textarea {
+            width: 100%; min-height: 120px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            padding: 14px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            resize: vertical;
+        }
+        .modal-content textarea:focus { border-color: var(--primary); outline: none; }
+        .modal-actions {
+            margin-top: 16px;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        .modal-actions button {
+            padding: 10px 24px;
+            border-radius: 10px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .modal-actions .btn-save { background: var(--primary); color: #fff; }
+        .modal-actions .btn-cancel { background: #e2e8f0; color: var(--text); }
+        .modal-actions .btn-run { background: var(--success); color: #fff; }
+
+        /* Feedback count badge */
+        .fb-count-badge {
+            background: #dbeafe;
+            color: var(--primary);
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 700;
+        }
+
+        @media (max-width: 768px) {
+            .input-group { flex-direction: column; }
+            .container { padding: 16px 8px; }
+            .header h1 { font-size: 1.3rem; }
+            .mode-toggle { flex-wrap: wrap; }
+            .feedback-bar { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>수익성분석 자연어 조회 시스템</h1>
+        <p>ChatGPT API 기반 &bull; 자연어 질문 &rarr; SQL 자동 변환 &rarr; 데이터를 표/그래프로 시각화</p>
+        <div style="margin-top:10px; display:flex; justify-content:center; gap:12px;">
+            <a href="/report" style="color:white;text-decoration:none;font-size:0.78rem;padding:5px 14px;border:1px solid rgba(255,255,255,0.3);border-radius:8px;transition:all 0.2s;background:rgba(220,38,38,0.3);" onmouseover="this.style.background='rgba(220,38,38,0.5)'" onmouseout="this.style.background='rgba(220,38,38,0.3)'">PPT 분석 장표 생성</a>
+            <a href="/admin" style="color:white;text-decoration:none;font-size:0.78rem;padding:5px 14px;border:1px solid rgba(255,255,255,0.3);border-radius:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='transparent'">학습 관리 (Data Dictionary / Examples)</a>
+        </div>
+        <div class="status-bar">
+            <span><span class="status-dot unknown" id="dbStatus"></span>DB 연결</span>
+            <span><span class="status-dot unknown" id="apiStatus"></span>ChatGPT API</span>
+            <span id="modelInfo" style="opacity:0.7"></span>
+            <span id="learningInfo" style="opacity:0.7"></span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Mode Toggle -->
+        <div class="mode-toggle">
+            <button class="mode-btn active" onclick="switchMode('nlq')">자연어 질의</button>
+            <button class="mode-btn" onclick="switchMode('sql')">직접 SQL</button>
+        </div>
+
+        <!-- NLQ Input -->
+        <div class="query-section" id="nlqSection">
+            <div class="input-group">
+                <input type="text" id="questionInput" placeholder="궁금한 것을 자연어로 질문하세요... (예: 손익센터별 총매출 합계)" />
+                <button id="queryBtn" onclick="submitNLQ()">조회</button>
+            </div>
+            <div class="examples">
+                <span class="label">예시:</span>
+                <span class="example-chip" onclick="setExample(this)">손익센터별 총매출 합계</span>
+                <span class="example-chip" onclick="setExample(this)">플랜트별 매출 상위 10개</span>
+                <span class="example-chip" onclick="setExample(this)">제품별 매출 TOP 5</span>
+                <span class="example-chip" onclick="setExample(this)">내수 vs 수출 매출 비교</span>
+                <span class="example-chip" onclick="setExample(this)">일별 총매출 추이</span>
+                <span class="example-chip" onclick="setExample(this)">브랜드별 판매수량 합계</span>
+                <span class="example-chip" onclick="setExample(this)">고객그룹별 매출총이익</span>
+                <span class="example-chip" onclick="setExample(this)">영업팀별 영업이익 순위</span>
+            </div>
+        </div>
+
+        <!-- SQL Input -->
+        <div class="query-section hidden" id="sqlSection_input">
+            <div class="input-group">
+                <textarea id="sqlInput" placeholder="SELECT 문을 입력하세요...&#10;예: SELECT PROFIT_CTR, SUM(ZAMT001) AS total FROM MOD_BOARD_PROFIT_ANALYSIS GROUP BY PROFIT_CTR"></textarea>
+                <button id="sqlBtn" onclick="submitSQL()">실행</button>
+            </div>
+        </div>
+
+        <!-- Query History -->
+        <div class="history-section" id="historySection">
+            <h3>최근 조회 이력</h3>
+            <div id="historyList"></div>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>ChatGPT가 SQL을 생성하고 데이터를 조회하고 있습니다...</p>
+            <div class="loading-steps" id="loadingSteps">자연어 분석 중...</div>
+        </div>
+
+        <!-- Error -->
+        <div class="error-box" id="errorBox"></div>
+
+        <!-- SQL Display -->
+        <div class="sql-section" id="sqlSection">
+            <button class="copy-btn" onclick="copySQL()">복사</button>
+            <span class="sql-label">GENERATED SQL</span>
+            <pre id="sqlDisplay"></pre>
+        </div>
+
+        <!-- Feedback Bar -->
+        <div class="feedback-bar" id="feedbackBar">
+            <span class="fb-label">이 SQL이 정확한가요?</span>
+            <button class="fb-btn good" onclick="feedbackGood()">정확해요</button>
+            <button class="fb-btn edit" onclick="openEditModal()">SQL 수정하기</button>
+            <span class="fb-label" id="feedbackStatus" style="margin-left:auto"></span>
+        </div>
+
+        <!-- SQL Edit Modal -->
+        <div class="modal-overlay" id="editModal">
+            <div class="modal-content">
+                <h3>SQL 수정 (학습 데이터로 저장됩니다)</h3>
+                <p style="font-size:0.82rem;color:var(--text-light);margin-bottom:12px">
+                    수정한 SQL은 향후 유사한 질문에 대해 더 정확한 SQL을 생성하는 데 활용됩니다.
+                </p>
+                <label style="font-size:0.8rem;font-weight:600;color:var(--text-light)">원래 질문:</label>
+                <p id="editQuestion" style="font-size:0.9rem;margin-bottom:12px;padding:8px;background:#f8fafc;border-radius:8px"></p>
+                <label style="font-size:0.8rem;font-weight:600;color:var(--text-light)">SQL 수정:</label>
+                <textarea id="editSqlInput"></textarea>
+                <div class="modal-actions">
+                    <button class="btn-cancel" onclick="closeEditModal()">취소</button>
+                    <button class="btn-run" onclick="runEditedSQL()">실행 후 저장</button>
+                    <button class="btn-save" onclick="saveEditedSQL()">저장만</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div class="results-section" id="resultsSection">
+            <div class="result-meta">
+                <span id="resultInfo"></span>
+                <span class="count" id="rowCount"></span>
+            </div>
+
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('table')">표 (Table)</button>
+                <button class="tab-btn" onclick="switchTab('chart')">그래프 (Chart)</button>
+            </div>
+
+            <div class="tab-content">
+                <div class="table-wrap active" id="tableWrap"></div>
+                <div class="chart-wrap" id="chartWrap">
+                    <div class="chart-container">
+                        <canvas id="resultChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schema Info -->
+        <details class="schema-toggle">
+            <summary>테이블 스키마 보기 (MOD_BOARD_PROFIT_ANALYSIS - 100개 컬럼)</summary>
+            <div class="schema-content" id="schemaContent">
+                <p style="color:#94a3b8; font-size:0.8rem;">로딩 중...</p>
+            </div>
+        </details>
+    </div>
+
+<script>
+    let chartInstance = null;
+    let queryHistory = [];
+    let currentMode = 'nlq'; // 'nlq' or 'sql'
+
+    // ─── Init ────────────────────────────────────
+    window.addEventListener('DOMContentLoaded', () => {
+        loadSchema();
+        checkHealth();
+        loadHistory();
+    });
+
+    document.getElementById('questionInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') submitNLQ();
+    });
+    document.getElementById('sqlInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter' && e.ctrlKey) submitSQL();
+    });
+
+    // ─── Health Check ────────────────────────────
+    async function checkHealth() {
+        try {
+            const res = await fetch('/api/health');
+            const data = await res.json();
+            setStatus('dbStatus', data.db);
+            setStatus('apiStatus', data.api_key);
+            document.getElementById('modelInfo').textContent = `Model: ${data.model || ''}`;
+            const fbCount = data.feedback_count || 0;
+            const builtinCount = data.builtin_examples || 0;
+            document.getElementById('learningInfo').textContent =
+                `학습: 내장 ${builtinCount}건 + 피드백 ${fbCount}건`;
+        } catch {
+            setStatus('dbStatus', false);
+            setStatus('apiStatus', false);
+        }
+    }
+
+    function setStatus(id, ok) {
+        const el = document.getElementById(id);
+        el.className = 'status-dot ' + (ok ? 'ok' : 'err');
+    }
+
+    // ─── Mode Switch ─────────────────────────────
+    function switchMode(mode) {
+        currentMode = mode;
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById('nlqSection').classList.toggle('hidden', mode !== 'nlq');
+        document.getElementById('sqlSection_input').classList.toggle('hidden', mode !== 'sql');
+    }
+
+    // ─── NLQ Submit ──────────────────────────────
+    function setExample(el) {
+        document.getElementById('questionInput').value = el.textContent;
+        submitNLQ();
+    }
+
+    async function submitNLQ() {
+        const question = document.getElementById('questionInput').value.trim();
+        if (!question) return;
+
+        const btn = document.getElementById('queryBtn');
+        btn.disabled = true;
+        resetUI();
+        show('loading');
+        updateLoadingStep('ChatGPT API로 SQL 생성 중...');
+
+        try {
+            const res = await fetch('/api/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question })
+            });
+            const data = await res.json();
+            hide('loading');
+
+            if (data.error) {
+                showError(data.error, data.sql);
+                return;
+            }
+
+            addHistory(question, data.row_count);
+            displayResults(data);
+
+        } catch (e) {
+            hide('loading');
+            showError('네트워크 오류: ' + e.message);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // ─── Direct SQL Submit ───────────────────────
+    async function submitSQL() {
+        const sql = document.getElementById('sqlInput').value.trim();
+        if (!sql) return;
+
+        const btn = document.getElementById('sqlBtn');
+        btn.disabled = true;
+        resetUI();
+        show('loading');
+        updateLoadingStep('SQL 실행 중...');
+
+        try {
+            const res = await fetch('/api/direct-sql', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sql })
+            });
+            const data = await res.json();
+            hide('loading');
+
+            if (data.error) {
+                showError(data.error, data.sql);
+                return;
+            }
+
+            addHistory(`[SQL] ${sql.substring(0, 60)}...`, data.row_count);
+            displayResults(data);
+
+        } catch (e) {
+            hide('loading');
+            showError('네트워크 오류: ' + e.message);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // ─── Display Results ─────────────────────────
+    // Store last query data for feedback
+    let lastQueryData = null;
+
+    function displayResults(data) {
+        lastQueryData = data;
+
+        // Show SQL
+        let engineBadge = '';
+        if (data.engine === 'local') {
+            engineBadge = ' <span style="background:#f59e0b;color:#fff;font-size:0.65rem;padding:2px 8px;border-radius:6px;margin-left:8px;vertical-align:middle">LOCAL FALLBACK</span>';
+        } else if (data.engine === 'gpt') {
+            engineBadge = ' <span style="background:#10b981;color:#fff;font-size:0.65rem;padding:2px 8px;border-radius:6px;margin-left:8px;vertical-align:middle">ChatGPT</span>';
+        } else if (data.engine === 'feedback') {
+            engineBadge = ' <span style="background:#7c3aed;color:#fff;font-size:0.65rem;padding:2px 8px;border-radius:6px;margin-left:8px;vertical-align:middle">FEEDBACK SQL</span>';
+        }
+        document.getElementById('sqlDisplay').innerHTML = highlightSQL(data.sql);
+        document.querySelector('.sql-label').innerHTML = 'GENERATED SQL' + engineBadge;
+        show('sqlSection');
+
+        // Show feedback bar
+        document.getElementById('feedbackStatus').textContent = '';
+        document.querySelectorAll('.fb-btn.good').forEach(b => b.classList.remove('selected'));
+        show('feedbackBar');
+
+        if (!data.rows || data.rows.length === 0) {
+            showError('결과 없음: 조건에 맞는 데이터가 없습니다.');
+            return;
+        }
+
+        document.getElementById('resultInfo').textContent =
+            data.question ? `"${data.question}"` : 'SQL 실행 결과';
+        document.getElementById('rowCount').textContent = `${data.row_count.toLocaleString()}건`;
+
+        renderTable(data.columns, data.rows);
+        renderChart(data.chart, data.columns, data.rows);
+        show('resultsSection');
+        switchTab('table');
+    }
+
+    // ─── SQL Syntax Highlighting ─────────────────
+    function highlightSQL(sql) {
+        const keywords = ['SELECT','FROM','WHERE','GROUP BY','ORDER BY','HAVING','LIMIT',
+            'JOIN','LEFT JOIN','RIGHT JOIN','INNER JOIN','ON','AS','AND','OR','NOT','IN',
+            'BETWEEN','LIKE','IS NULL','IS NOT NULL','CASE','WHEN','THEN','ELSE','END',
+            'SUM','COUNT','AVG','MAX','MIN','DISTINCT','DESC','ASC','ROUND','FORMAT',
+            'COALESCE','IFNULL','CONCAT','CAST','UNION','ALL'];
+        let highlighted = sql.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        keywords.forEach(kw => {
+            const regex = new RegExp('\\b(' + kw.replace(/ /g, '\\s+') + ')\\b', 'gi');
+            highlighted = highlighted.replace(regex, '<span class="keyword">$1</span>');
+        });
+        return highlighted;
+    }
+
+    function copySQL() {
+        const sql = document.getElementById('sqlDisplay').textContent;
+        navigator.clipboard.writeText(sql).then(() => {
+            const btn = document.querySelector('.copy-btn');
+            btn.textContent = '복사됨!';
+            setTimeout(() => btn.textContent = '복사', 1500);
+        });
+    }
+
+    // ─── Table Rendering ─────────────────────────
+    function renderTable(columns, rows) {
+        const numCols = new Set();
+        if (rows.length > 0) {
+            columns.forEach(col => {
+                const val = rows[0][col];
+                if (typeof val === 'number') numCols.add(col);
+            });
+        }
+
+        let html = '<table><thead><tr><th>#</th>';
+        columns.forEach(col => html += `<th>${col}</th>`);
+        html += '</tr></thead><tbody>';
+        rows.forEach((row, idx) => {
+            html += '<tr>';
+            html += `<td style="color:#94a3b8;font-size:0.75rem">${idx + 1}</td>`;
+            columns.forEach(col => {
+                const val = row[col];
+                if (numCols.has(col) && val !== null && val !== undefined) {
+                    html += `<td class="num">${Number(val).toLocaleString()}</td>`;
+                } else {
+                    html += `<td>${val ?? ''}</td>`;
+                }
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById('tableWrap').innerHTML = html;
+    }
+
+    // ─── Chart Rendering ─────────────────────────
+    function renderChart(chartInfo, columns, rows) {
+        if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+        if (!chartInfo || chartInfo.chart_type === 'table_only') {
+            document.querySelector('.tab-btn:last-child').style.display = 'none';
+            return;
+        }
+        document.querySelector('.tab-btn:last-child').style.display = '';
+
+        const labels = rows.map(r => {
+            const v = r[chartInfo.label_column];
+            return v !== null && v !== undefined ? String(v) : '';
+        });
+
+        const colors = [
+            '#2563eb','#7c3aed','#10b981','#f59e0b','#ef4444',
+            '#06b6d4','#ec4899','#8b5cf6','#14b8a6','#f97316',
+            '#6366f1','#84cc16','#e11d48','#0ea5e9','#a855f7'
+        ];
+        const bgColors = colors.map(c => c + 'b3');
+
+        const datasets = (chartInfo.data_columns || []).map((dc, i) => ({
+            label: dc,
+            data: rows.map(r => {
+                const v = r[dc];
+                return v !== null && v !== undefined ? Number(v) : 0;
+            }),
+            backgroundColor: chartInfo.chart_type === 'pie' || chartInfo.chart_type === 'doughnut'
+                ? bgColors.slice(0, rows.length)
+                : bgColors[i % bgColors.length],
+            borderColor: chartInfo.chart_type === 'pie' || chartInfo.chart_type === 'doughnut'
+                ? '#ffffff'
+                : colors[i % colors.length],
+            borderWidth: 2,
+            borderRadius: (chartInfo.chart_type === 'bar' || chartInfo.chart_type === 'horizontalBar') ? 6 : 0,
+            tension: 0.35,
+            fill: chartInfo.chart_type === 'line' ? { target: 'origin', alpha: 0.08 } : false,
+            pointRadius: chartInfo.chart_type === 'line' ? 4 : 0,
+            pointHoverRadius: 6,
+        }));
+
+        let chartType = chartInfo.chart_type;
+        let indexAxis = 'x';
+        if (chartType === 'horizontalBar') { chartType = 'bar'; indexAxis = 'y'; }
+
+        const ctx = document.getElementById('resultChart').getContext('2d');
+        chartInstance = new Chart(ctx, {
+            type: chartType,
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                indexAxis,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: chartInfo.title || '조회 결과',
+                        font: { size: 16, weight: 'bold' },
+                        padding: 24,
+                        color: '#1e293b'
+                    },
+                    legend: {
+                        display: datasets.length > 1 || chartType === 'pie' || chartType === 'doughnut',
+                        labels: { padding: 16, usePointStyle: true, pointStyle: 'circle' }
+                    },
+                    tooltip: {
+                        backgroundColor: '#1e293b',
+                        titleFont: { size: 13 },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(ctx) {
+                                let val = ctx.parsed.y ?? ctx.parsed ?? ctx.raw;
+                                if (typeof val === 'object') val = ctx.raw;
+                                return ` ${ctx.dataset.label}: ${Number(val).toLocaleString()}`;
+                            }
+                        }
+                    }
+                },
+                scales: (chartType === 'pie' || chartType === 'doughnut') ? {} : {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 11 }, maxRotation: 45 }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f1f5f9' },
+                        ticks: {
+                            font: { size: 11 },
+                            callback: v => Number(v).toLocaleString()
+                        }
+                    }
+                },
+                animation: { duration: 600, easing: 'easeOutQuart' }
+            }
+        });
+    }
+
+    // ─── Tab Switch ──────────────────────────────
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach((b, i) => {
+            b.classList.toggle('active', (tab === 'table' && i === 0) || (tab === 'chart' && i === 1));
+        });
+        document.getElementById('tableWrap').classList.toggle('active', tab === 'table');
+        document.getElementById('chartWrap').classList.toggle('active', tab === 'chart');
+        if (tab === 'chart' && chartInstance) {
+            setTimeout(() => chartInstance.resize(), 100);
+        }
+    }
+
+    // ─── History ─────────────────────────────────
+    function addHistory(question, rowCount) {
+        queryHistory.unshift({ question, rowCount, time: new Date() });
+        if (queryHistory.length > 10) queryHistory.pop();
+        saveHistory();
+        renderHistory();
+    }
+
+    function renderHistory() {
+        if (queryHistory.length === 0) {
+            hide('historySection');
+            return;
+        }
+        show('historySection');
+        const html = queryHistory.map((h, i) =>
+            `<div class="history-item" onclick="replayHistory(${i})">
+                <span class="q">${h.question}</span>
+                <span class="info">${h.rowCount}건 &bull; ${formatTime(h.time)}</span>
+            </div>`
+        ).join('');
+        document.getElementById('historyList').innerHTML = html;
+    }
+
+    function replayHistory(idx) {
+        const h = queryHistory[idx];
+        if (h.question.startsWith('[SQL]')) {
+            switchMode('sql');
+            document.querySelectorAll('.mode-btn')[1].click();
+            document.getElementById('sqlInput').value = h.question.replace('[SQL] ', '').replace('...', '');
+        } else {
+            switchMode('nlq');
+            document.querySelectorAll('.mode-btn')[0].click();
+            document.getElementById('questionInput').value = h.question;
+            submitNLQ();
+        }
+    }
+
+    function formatTime(d) {
+        const date = new Date(d);
+        return `${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`;
+    }
+
+    function saveHistory() {
+        try { localStorage.setItem('nlq_history', JSON.stringify(queryHistory)); } catch {}
+    }
+
+    function loadHistory() {
+        try {
+            const saved = localStorage.getItem('nlq_history');
+            if (saved) queryHistory = JSON.parse(saved);
+            renderHistory();
+        } catch {}
+    }
+
+    // ─── Schema Load ─────────────────────────────
+    async function loadSchema() {
+        try {
+            const res = await fetch('/api/schema');
+            const data = await res.json();
+            const html = `<table>
+                <thead><tr><th>#</th><th>Column</th><th>Type</th><th>Comment</th></tr></thead>
+                <tbody>${data.columns.map((c, i) =>
+                    `<tr><td>${i+1}</td><td><b>${c.COLUMN_NAME}</b></td><td>${c.COLUMN_TYPE}</td><td>${c.COLUMN_COMMENT || ''}</td></tr>`
+                ).join('')}</tbody></table>`;
+            document.getElementById('schemaContent').innerHTML = html;
+        } catch {
+            document.getElementById('schemaContent').innerHTML = '<p style="color:#ef4444">스키마 로드 실패</p>';
+        }
+    }
+
+    // ─── Helpers ──────────────────────────────────
+    function show(id) { document.getElementById(id).classList.add('active'); }
+    function hide(id) { document.getElementById(id).classList.remove('active'); }
+
+    function resetUI() {
+        hide('errorBox');
+        hide('sqlSection');
+        hide('resultsSection');
+        hide('feedbackBar');
+    }
+
+    // ─── Feedback Functions ──────────────────
+    async function feedbackGood() {
+        if (!lastQueryData) return;
+        const btn = document.querySelector('.fb-btn.good');
+        btn.classList.add('selected');
+        // Save as confirmed example
+        try {
+            await fetch('/api/feedback', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    question: lastQueryData.question,
+                    original_sql: lastQueryData.sql,
+                    corrected_sql: lastQueryData.sql
+                })
+            });
+            document.getElementById('feedbackStatus').innerHTML =
+                '<span style="color:var(--success)">학습 저장 완료!</span>';
+            checkHealth();
+        } catch (e) {
+            document.getElementById('feedbackStatus').textContent = '저장 실패';
+        }
+    }
+
+    function openEditModal() {
+        if (!lastQueryData) return;
+        document.getElementById('editQuestion').textContent = lastQueryData.question;
+        document.getElementById('editSqlInput').value = lastQueryData.sql;
+        show('editModal');
+    }
+
+    function closeEditModal() {
+        hide('editModal');
+    }
+
+    async function saveEditedSQL() {
+        const corrected = document.getElementById('editSqlInput').value.trim();
+        if (!corrected || !lastQueryData) return;
+        try {
+            const res = await fetch('/api/feedback', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    question: lastQueryData.question,
+                    original_sql: lastQueryData.sql,
+                    corrected_sql: corrected
+                })
+            });
+            const data = await res.json();
+            closeEditModal();
+            document.getElementById('feedbackStatus').innerHTML =
+                `<span style="color:var(--success)">학습 저장 완료! (총 ${data.count}건)</span>`;
+            checkHealth();
+        } catch (e) {
+            alert('저장 실패: ' + e.message);
+        }
+    }
+
+    async function runEditedSQL() {
+        const corrected = document.getElementById('editSqlInput').value.trim();
+        if (!corrected || !lastQueryData) return;
+        closeEditModal();
+        // Save feedback first
+        try {
+            await fetch('/api/feedback', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    question: lastQueryData.question,
+                    original_sql: lastQueryData.sql,
+                    corrected_sql: corrected
+                })
+            });
+        } catch {} // best effort
+        // Now execute the corrected SQL
+        resetUI();
+        show('loading');
+        try {
+            const res = await fetch('/api/direct-sql', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ sql: corrected })
+            });
+            const data = await res.json();
+            hide('loading');
+            if (data.error) { showError(data.error, data.sql); return; }
+            data.question = lastQueryData.question;
+            data.engine = 'feedback';
+            displayResults(data);
+            document.getElementById('feedbackStatus').innerHTML =
+                '<span style="color:var(--success)">수정된 SQL로 재조회 + 학습 저장 완료!</span>';
+            checkHealth();
+        } catch (e) {
+            hide('loading');
+            showError('실행 오류: ' + e.message);
+        }
+    }
+
+    function showError(msg, sql) {
+        let html = `<b>오류:</b> ${msg}`;
+        if (sql) html += `<code>${sql}</code>`;
+        document.getElementById('errorBox').innerHTML = html;
+        show('errorBox');
+    }
+
+    function updateLoadingStep(text) {
+        const el = document.getElementById('loadingSteps');
+        if (el) el.textContent = text;
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPT 분석 장표 생성</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --bg: #f1f5f9;
+            --card: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --purple: #7c3aed;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: 'Pretendard', 'Segoe UI', -apple-system, sans-serif;
+            background: var(--bg); color: var(--text); min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #dc2626, #ea580c);
+            color: white; padding: 24px 0; text-align: center;
+            box-shadow: 0 4px 16px rgba(220,38,38,0.25);
+        }
+        .header h1 { font-size: 1.5rem; font-weight: 800; }
+        .header p { font-size: 0.82rem; opacity: 0.85; margin-top: 6px; }
+        .header .nav-links {
+            margin-top: 12px; display: flex; justify-content: center; gap: 16px;
+        }
+        .header .nav-links a {
+            color: white; text-decoration: none; font-size: 0.82rem;
+            padding: 6px 16px; border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.3); transition: all 0.2s;
+        }
+        .header .nav-links a:hover { background: rgba(255,255,255,0.15); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+        /* Selection Panel */
+        .selection-panel {
+            background: var(--card); border-radius: 16px;
+            padding: 32px; margin-bottom: 24px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+        .selection-panel h2 { font-size: 1.3rem; margin-bottom: 8px; text-align: center; }
+        .selection-panel .subtitle {
+            color: var(--text-light); font-size: 0.88rem; margin-bottom: 24px; text-align: center;
+        }
+
+        /* Month Selector Row */
+        .month-selector {
+            display: flex; justify-content: center; gap: 12px;
+            align-items: center; flex-wrap: wrap;
+            margin-bottom: 24px;
+        }
+        .month-selector label {
+            font-weight: 600; font-size: 0.95rem; color: var(--text);
+        }
+        .month-selector select {
+            padding: 12px 20px; font-size: 1rem; font-weight: 600;
+            border: 2px solid var(--border); border-radius: 12px;
+            outline: none; min-width: 200px; cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .month-selector select:focus { border-color: var(--primary); }
+
+        /* Prompt Input */
+        .prompt-section {
+            margin-bottom: 24px;
+        }
+        .prompt-section label {
+            display: block; font-weight: 600; font-size: 0.92rem;
+            color: var(--text); margin-bottom: 8px;
+        }
+        .prompt-section .hint {
+            display: block; font-size: 0.78rem; color: var(--text-light);
+            margin-bottom: 8px; font-weight: 400;
+        }
+        .prompt-input {
+            width: 100%; padding: 14px 18px; font-size: 0.95rem;
+            border: 2px solid var(--border); border-radius: 12px;
+            outline: none; resize: vertical; min-height: 80px;
+            font-family: inherit; transition: border-color 0.2s;
+            line-height: 1.6;
+        }
+        .prompt-input:focus { border-color: var(--primary); }
+        .prompt-input::placeholder { color: #94a3b8; }
+
+        /* Prompt examples */
+        .prompt-examples {
+            margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px;
+        }
+        .prompt-chip {
+            display: inline-block; padding: 5px 12px;
+            background: #fff7ed; color: #ea580c; border-radius: 16px;
+            font-size: 0.76rem; cursor: pointer; transition: all 0.2s;
+            border: 1px solid #fed7aa;
+        }
+        .prompt-chip:hover { background: #fed7aa; transform: translateY(-1px); }
+
+        /* Attachment Section */
+        .attachment-section {
+            margin-bottom: 28px;
+        }
+        .attachment-section > label {
+            display: block; font-weight: 600; font-size: 0.92rem;
+            color: var(--text); margin-bottom: 8px;
+        }
+        .attachment-row {
+            display: flex; gap: 20px; align-items: flex-start;
+        }
+        .file-input-area {
+            flex: 0 0 320px;
+        }
+        .file-drop-zone {
+            border: 2px dashed var(--border); border-radius: 14px;
+            padding: 28px 20px; text-align: center; cursor: pointer;
+            transition: all 0.2s; background: #fafbfc; position: relative;
+        }
+        .file-drop-zone:hover, .file-drop-zone.dragover {
+            border-color: var(--primary); background: #eff6ff;
+        }
+        .file-drop-zone .icon { font-size: 2rem; margin-bottom: 8px; }
+        .file-drop-zone .text { font-size: 0.85rem; color: var(--text-light); }
+        .file-drop-zone .formats { font-size: 0.72rem; color: #94a3b8; margin-top: 6px; }
+        .file-drop-zone input[type="file"] {
+            position: absolute; inset: 0; opacity: 0; cursor: pointer;
+        }
+        .file-info {
+            display: none; margin-top: 10px; padding: 10px 14px;
+            background: #f0fdf4; border: 1px solid #bbf7d0;
+            border-radius: 10px; font-size: 0.82rem;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .file-info.active { display: flex; }
+        .file-info .fname { flex: 1; color: var(--text); font-weight: 600; }
+        .file-info .fsize { color: var(--text-light); font-size: 0.75rem; }
+        .file-info .remove-btn {
+            background: none; border: none; color: var(--error); cursor: pointer;
+            font-size: 1.1rem; padding: 0 4px; line-height: 1;
+        }
+
+        /* File Preview Panel */
+        .file-preview-panel {
+            flex: 1; min-width: 0;
+            display: none;
+        }
+        .file-preview-panel.active { display: block; }
+        .preview-container {
+            background: #f8fafc; border: 1px solid var(--border);
+            border-radius: 14px; overflow: hidden;
+            max-height: 400px;
+        }
+        .preview-header {
+            padding: 10px 16px; background: #f1f5f9;
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.82rem; font-weight: 600; color: var(--text);
+        }
+        .preview-header .badge {
+            padding: 2px 10px; border-radius: 8px; font-size: 0.72rem;
+            font-weight: 700; color: white;
+        }
+        .badge.excel { background: #10b981; }
+        .badge.csv { background: #2563eb; }
+        .badge.image { background: #7c3aed; }
+        .badge.pdf { background: #ef4444; }
+        .preview-body {
+            padding: 12px; overflow: auto; max-height: 340px;
+        }
+        /* Image preview */
+        .preview-body img {
+            max-width: 100%; max-height: 300px;
+            display: block; margin: 0 auto; border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        /* Table preview */
+        .preview-table {
+            width: 100%; border-collapse: collapse; font-size: 0.78rem;
+        }
+        .preview-table th {
+            background: #e2e8f0; padding: 8px 10px; text-align: left;
+            font-weight: 700; white-space: nowrap; position: sticky; top: 0;
+            border-bottom: 2px solid var(--border);
+        }
+        .preview-table td {
+            padding: 6px 10px; border-bottom: 1px solid #f1f5f9;
+            white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+        }
+        .preview-table tr:hover td { background: #eff6ff; }
+        .preview-meta {
+            padding: 8px 16px; background: #f1f5f9;
+            border-top: 1px solid var(--border);
+            font-size: 0.75rem; color: var(--text-light);
+            display: flex; gap: 16px;
+        }
+        .preview-loading {
+            text-align: center; padding: 40px;
+            color: var(--text-light); font-size: 0.85rem;
+        }
+        .preview-loading .spinner-sm {
+            width: 24px; height: 24px;
+            border: 3px solid var(--border); border-top-color: var(--primary);
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        /* Generate Button */
+        .generate-area { text-align: center; }
+        .generate-btn {
+            padding: 14px 40px; background: linear-gradient(135deg, #dc2626, #ea580c);
+            color: white; font-size: 1.05rem; font-weight: 700;
+            border: none; border-radius: 12px; cursor: pointer;
+            transition: all 0.2s; box-shadow: 0 4px 12px rgba(220,38,38,0.3);
+        }
+        .generate-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(220,38,38,0.4); }
+        .generate-btn:disabled { background: #94a3b8; cursor: not-allowed; transform: none; box-shadow: none; }
+        .generate-btn .icon { font-size: 1.2rem; margin-right: 8px; }
+
+        /* Progress */
+        .progress-section {
+            display: none; text-align: center; padding: 48px;
+            background: var(--card); border-radius: 16px;
+            margin-bottom: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+        .progress-section.active { display: block; }
+        .spinner-large {
+            width: 64px; height: 64px;
+            border: 5px solid var(--border); border-top-color: #dc2626;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+            margin: 0 auto 24px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .progress-section h3 { font-size: 1.1rem; margin-bottom: 8px; }
+        .progress-section p { color: var(--text-light); font-size: 0.9rem; }
+        .progress-bar-wrap {
+            width: 300px; height: 6px; background: var(--border);
+            border-radius: 3px; margin: 16px auto 0; overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%; background: linear-gradient(90deg, #dc2626, #ea580c);
+            border-radius: 3px; transition: width 0.3s; width: 0%;
+        }
+
+        /* Preview Section */
+        .preview-section {
+            display: none; margin-bottom: 24px;
+        }
+        .preview-section.active { display: block; }
+        .slide-preview {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 20px;
+        }
+        .slide-card {
+            background: var(--card); border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            overflow: hidden; transition: transform 0.2s;
+        }
+        .slide-card:hover { transform: translateY(-2px); }
+        .slide-card-header {
+            padding: 14px 20px; background: #f8fafc;
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 10px;
+        }
+        .slide-num {
+            width: 28px; height: 28px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800; font-size: 0.82rem; color: white;
+        }
+        .slide-num.s1 { background: #0f172a; }
+        .slide-num.s2 { background: var(--primary); }
+        .slide-num.s3 { background: var(--purple); }
+        .slide-num.s4 { background: #ea580c; }
+        .slide-num.s5 { background: var(--success); }
+        .slide-card-header h3 { font-size: 0.92rem; }
+        .slide-card-body { padding: 16px 20px; }
+        .slide-card-body .kpi-row {
+            display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
+        }
+        .mini-kpi {
+            flex: 1; min-width: 100px; padding: 10px;
+            background: #f8fafc; border-radius: 10px;
+            border: 1px solid var(--border); text-align: center;
+        }
+        .mini-kpi .label { font-size: 0.72rem; color: var(--text-light); }
+        .mini-kpi .value { font-size: 1.05rem; font-weight: 800; color: var(--text); margin-top: 2px; }
+        .mini-kpi .change { font-size: 0.72rem; font-weight: 600; margin-top: 2px; }
+        .mini-kpi .change.up { color: var(--success); }
+        .mini-kpi .change.down { color: var(--error); }
+        .slide-card-body .chart-container { height: 200px; margin-top: 8px; }
+        .slide-card-body .data-list { font-size: 0.82rem; color: var(--text-light); list-style: none; }
+        .slide-card-body .data-list li {
+            padding: 4px 0; border-bottom: 1px solid #f1f5f9;
+            display: flex; justify-content: space-between;
+        }
+        .slide-card-body .data-list li .name { color: var(--text); }
+        .slide-card-body .data-list li .val { font-weight: 700; font-family: 'Fira Code', monospace; }
+
+        /* Insight list */
+        .insight-list { list-style: none; }
+        .insight-list li {
+            padding: 6px 0; font-size: 0.84rem;
+            border-bottom: 1px solid #f1f5f9; color: var(--text);
+        }
+        .insight-list li:last-child { border-bottom: none; }
+
+        /* Download success */
+        .success-msg {
+            display: none; text-align: center; padding: 32px;
+            background: #f0fdf4; border: 2px solid #bbf7d0;
+            border-radius: 16px; margin-bottom: 24px;
+        }
+        .success-msg.active { display: block; }
+        .success-msg .check-icon { font-size: 3rem; margin-bottom: 12px; }
+        .success-msg h3 { color: var(--success); font-size: 1.1rem; }
+        .success-msg p { color: var(--text-light); font-size: 0.88rem; margin-top: 6px; }
+
+        /* Error */
+        .error-msg {
+            display: none; text-align: center; padding: 24px;
+            background: #fef2f2; border: 1px solid #fecaca;
+            border-radius: 14px; margin-bottom: 24px; color: #991b1b;
+        }
+        .error-msg.active { display: block; }
+
+        /* Slide description */
+        .slide-desc {
+            background: var(--card); border-radius: 14px; padding: 24px;
+            margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+        .slide-desc h3 { font-size: 1rem; margin-bottom: 14px; color: var(--text); }
+        .slide-desc .slides-info {
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;
+        }
+        .slide-info-item {
+            text-align: center; padding: 14px 8px;
+            background: #f8fafc; border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+        .slide-info-item .num { font-size: 1.5rem; font-weight: 800; margin-bottom: 4px; }
+        .slide-info-item .num.s1 { color: #0f172a; }
+        .slide-info-item .num.s2 { color: var(--primary); }
+        .slide-info-item .num.s3 { color: var(--purple); }
+        .slide-info-item .num.s4 { color: #ea580c; }
+        .slide-info-item .num.s5 { color: var(--success); }
+        .slide-info-item .title { font-size: 0.78rem; font-weight: 700; }
+        .slide-info-item .desc { font-size: 0.7rem; color: var(--text-light); margin-top: 4px; }
+
+        @media (max-width: 768px) {
+            .slide-desc .slides-info { grid-template-columns: repeat(2, 1fr); }
+            .slide-preview { grid-template-columns: 1fr; }
+            .month-selector { flex-direction: column; }
+            .attachment-row { flex-direction: column; }
+            .file-input-area { flex: 1 1 auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>PPT 분석 장표 자동 생성</h1>
+        <p>년월을 선택하고, 프롬프트로 원하는 내용을 지시하면 수익성 분석 PPT 보고서를 자동으로 생성합니다</p>
+        <div class="nav-links">
+            <a href="/">NLQ 조회 화면</a>
+            <a href="/admin">학습 관리</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Slide Description -->
+        <div class="slide-desc">
+            <h3>보고서 구성 (5장)</h3>
+            <div class="slides-info">
+                <div class="slide-info-item">
+                    <div class="num s1">1</div>
+                    <div class="title">표지</div>
+                    <div class="desc">보고서 타이틀<br>월/기업 정보</div>
+                </div>
+                <div class="slide-info-item">
+                    <div class="num s2">2</div>
+                    <div class="title">매출 요약</div>
+                    <div class="desc">전사 KPI<br>사업부별 매출<br>전월 대비</div>
+                </div>
+                <div class="slide-info-item">
+                    <div class="num s3">3</div>
+                    <div class="title">사업부 상세</div>
+                    <div class="desc">플랜트별 매출<br>일별/주간 추이</div>
+                </div>
+                <div class="slide-info-item">
+                    <div class="num s4">4</div>
+                    <div class="title">원가 분석</div>
+                    <div class="desc">원가 항목별 구성<br>사업부별 원가 비교</div>
+                </div>
+                <div class="slide-info-item">
+                    <div class="num s5">5</div>
+                    <div class="title">제품 & 인사이트</div>
+                    <div class="desc">매출 TOP10 제품<br>브랜드별 매출<br>핵심 요약</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Selection Panel -->
+        <div class="selection-panel">
+            <h2>PPT 보고서 생성</h2>
+            <p class="subtitle">월 선택 후 프롬프트를 입력하면 원하는 내용의 보고서를 자동 생성합니다. 첨부파일을 추가하면 참고 데이터로 활용됩니다.</p>
+
+            <!-- Month Selection -->
+            <div class="month-selector">
+                <label for="monthSelect">분석 기간:</label>
+                <select id="monthSelect">
+                    <option value="">로딩 중...</option>
+                </select>
+            </div>
+
+            <!-- Prompt Input -->
+            <div class="prompt-section">
+                <label for="promptInput">
+                    분석 프롬프트
+                    <span class="hint">GPT가 프롬프트 내용을 분석하여 슬라이드 구성을 최적화합니다. 비워두면 표준 보고서를 생성합니다.</span>
+                </label>
+                <textarea id="promptInput" class="prompt-input"
+                    placeholder="예: 제지사업부와 생활용품사업부의 매출 비교에 중점을 둔 보고서를 만들어 주세요. 원가 분석에서는 펄프 원가 비중을 강조해 주세요."></textarea>
+                <div class="prompt-examples">
+                    <span class="prompt-chip" onclick="setPrompt(this)">사업부별 매출 비교 중심 보고서</span>
+                    <span class="prompt-chip" onclick="setPrompt(this)">원가 구조 심층 분석 보고서</span>
+                    <span class="prompt-chip" onclick="setPrompt(this)">내수/수출 채널별 실적 비교</span>
+                    <span class="prompt-chip" onclick="setPrompt(this)">제품별 수익성 TOP10 집중 분석</span>
+                    <span class="prompt-chip" onclick="setPrompt(this)">경영진 월간 브리핑용 요약 보고서</span>
+                </div>
+            </div>
+
+            <!-- Attachment with Preview -->
+            <div class="attachment-section">
+                <label>첨부파일 (선택)</label>
+                <div class="attachment-row">
+                    <!-- Left: File Input -->
+                    <div class="file-input-area">
+                        <div class="file-drop-zone" id="dropZone">
+                            <input type="file" id="fileInput"
+                                accept=".xlsx,.xls,.csv,.png,.jpg,.jpeg,.gif,.bmp,.pdf"
+                                onchange="handleFileSelect(this)">
+                            <div class="icon">&#128206;</div>
+                            <div class="text">파일을 드래그하거나 클릭하여 업로드</div>
+                            <div class="formats">지원: Excel(.xlsx/.xls), CSV, 이미지(PNG/JPG/GIF), PDF</div>
+                        </div>
+                        <div class="file-info" id="fileInfo">
+                            <span class="fname" id="fileName"></span>
+                            <span class="fsize" id="fileSize"></span>
+                            <button class="remove-btn" onclick="removeFile()" title="파일 제거">&times;</button>
+                        </div>
+                    </div>
+
+                    <!-- Right: Preview Panel -->
+                    <div class="file-preview-panel" id="previewPanel">
+                        <div class="preview-container" id="previewContainer">
+                            <div class="preview-loading" id="previewLoading">
+                                <div class="spinner-sm"></div>
+                                파일 미리보기 로딩 중...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Generate Button -->
+            <div class="generate-area">
+                <button class="generate-btn" id="generateBtn" onclick="generateReport()" disabled>
+                    <span class="icon">&#128196;</span> PPT 보고서 생성 &amp; 다운로드
+                </button>
+            </div>
+        </div>
+
+        <!-- Progress -->
+        <div class="progress-section" id="progressSection">
+            <div class="spinner-large"></div>
+            <h3 id="progressTitle">PPT 보고서를 생성하고 있습니다...</h3>
+            <p id="progressDetail">데이터 조회 및 차트 생성 중</p>
+            <div class="progress-bar-wrap">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+        </div>
+
+        <!-- Error -->
+        <div class="error-msg" id="errorMsg"></div>
+
+        <!-- Success -->
+        <div class="success-msg" id="successMsg">
+            <div class="check-icon">&#9989;</div>
+            <h3>PPT 보고서가 성공적으로 생성되었습니다!</h3>
+            <p id="successDetail"></p>
+            <button class="generate-btn" style="margin-top:16px;background:var(--success);box-shadow:0 4px 12px rgba(16,185,129,0.3);" onclick="generateReport()">
+                다시 생성하기
+            </button>
+        </div>
+
+        <!-- Preview Section -->
+        <div class="preview-section" id="previewSection">
+            <div class="slide-preview" id="slidePreview"></div>
+        </div>
+    </div>
+
+<script>
+    let chartInstances = {};
+    let currentFile = null;
+
+    window.addEventListener('DOMContentLoaded', loadMonths);
+
+    // ─── File Drop Zone ──────────────────────────
+    const dropZone = document.getElementById('dropZone');
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            document.getElementById('fileInput').files = e.dataTransfer.files;
+            handleFileSelect(document.getElementById('fileInput'));
+        }
+    });
+
+    // ─── File Handling ───────────────────────────
+    function handleFileSelect(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        currentFile = file;
+
+        // Show file info
+        const info = document.getElementById('fileInfo');
+        info.style.display = 'flex';
+        document.getElementById('fileName').textContent = file.name;
+        document.getElementById('fileSize').textContent = formatFileSize(file.size);
+
+        // Show preview panel
+        const panel = document.getElementById('previewPanel');
+        panel.classList.add('active');
+
+        // Load preview
+        loadFilePreview(file);
+    }
+
+    function removeFile() {
+        currentFile = null;
+        document.getElementById('fileInput').value = '';
+        document.getElementById('fileInfo').style.display = 'none';
+        document.getElementById('previewPanel').classList.remove('active');
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    async function loadFilePreview(file) {
+        const container = document.getElementById('previewContainer');
+        container.innerHTML = '<div class="preview-loading"><div class="spinner-sm"></div>파일 미리보기 로딩 중...</div>';
+
+        const ext = file.name.split('.').pop().toLowerCase();
+
+        // Image files: preview locally
+        if (['png', 'jpg', 'jpeg', 'gif', 'bmp'].includes(ext)) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                container.innerHTML = `
+                    <div class="preview-header">
+                        <span class="badge image">IMAGE</span>
+                        ${file.name}
+                    </div>
+                    <div class="preview-body">
+                        <img src="${e.target.result}" alt="Preview">
+                    </div>
+                    <div class="preview-meta">
+                        <span>파일 크기: ${formatFileSize(file.size)}</span>
+                    </div>`;
+            };
+            reader.readAsDataURL(file);
+            return;
+        }
+
+        // Excel/CSV: upload for server-side preview
+        if (['xlsx', 'xls', 'csv'].includes(ext)) {
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const res = await fetch('/api/report/upload-preview', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+
+                if (!data.success || !data.preview) {
+                    container.innerHTML = `<div class="preview-loading" style="color:var(--error)">${data.error || '미리보기 실패'}</div>`;
+                    return;
+                }
+
+                const preview = data.preview;
+                const badgeClass = preview.ext === 'csv' ? 'csv' : 'excel';
+                const badgeText = preview.ext === 'csv' ? 'CSV' : 'EXCEL';
+
+                if (preview.type === 'excel' || preview.type === 'csv') {
+                    let tableHtml = '<table class="preview-table"><thead><tr>';
+                    tableHtml += '<th>#</th>';
+                    preview.columns.forEach(col => {
+                        tableHtml += `<th>${col}</th>`;
+                    });
+                    tableHtml += '</tr></thead><tbody>';
+                    preview.rows.forEach((row, idx) => {
+                        tableHtml += `<tr><td style="color:#94a3b8">${idx + 1}</td>`;
+                        preview.columns.forEach(col => {
+                            const val = row[col];
+                            if (val === null || val === undefined) {
+                                tableHtml += '<td style="color:#94a3b8">-</td>';
+                            } else if (typeof val === 'number') {
+                                tableHtml += `<td style="text-align:right;font-family:monospace">${Number(val).toLocaleString()}</td>`;
+                            } else {
+                                tableHtml += `<td>${String(val).substring(0, 40)}</td>`;
+                            }
+                        });
+                        tableHtml += '</tr>';
+                    });
+                    tableHtml += '</tbody></table>';
+
+                    container.innerHTML = `
+                        <div class="preview-header">
+                            <span class="badge ${badgeClass}">${badgeText}</span>
+                            ${preview.filename}
+                        </div>
+                        <div class="preview-body" style="overflow:auto;">
+                            ${tableHtml}
+                        </div>
+                        <div class="preview-meta">
+                            <span>컬럼: ${preview.columns.length}개</span>
+                            <span>전체 행수: ${preview.row_count.toLocaleString()}행</span>
+                            <span>미리보기: 상위 ${Math.min(10, preview.row_count)}행</span>
+                        </div>`;
+                } else {
+                    container.innerHTML = `<div class="preview-loading" style="color:var(--error)">${preview.error || '파일 읽기 오류'}</div>`;
+                }
+            } catch (e) {
+                container.innerHTML = `<div class="preview-loading" style="color:var(--error)">미리보기 오류: ${e.message}</div>`;
+            }
+            return;
+        }
+
+        // PDF
+        if (ext === 'pdf') {
+            container.innerHTML = `
+                <div class="preview-header">
+                    <span class="badge pdf">PDF</span>
+                    ${file.name}
+                </div>
+                <div class="preview-body" style="text-align:center;padding:40px;">
+                    <div style="font-size:3rem;margin-bottom:12px;">&#128196;</div>
+                    <div style="font-size:0.9rem;color:var(--text);">${file.name}</div>
+                    <div style="font-size:0.8rem;color:var(--text-light);margin-top:6px;">
+                        파일 크기: ${formatFileSize(file.size)}
+                    </div>
+                    <div style="font-size:0.78rem;color:#94a3b8;margin-top:8px;">
+                        PDF 파일은 보고서 생성 시 참고 자료로 활용됩니다
+                    </div>
+                </div>`;
+            return;
+        }
+
+        // Unknown
+        container.innerHTML = `
+            <div class="preview-header">
+                <span class="badge" style="background:#94a3b8">FILE</span>
+                ${file.name}
+            </div>
+            <div class="preview-body" style="text-align:center;padding:40px;color:var(--text-light);">
+                미리보기를 지원하지 않는 파일 형식입니다
+            </div>`;
+    }
+
+    // ─── Prompt Examples ─────────────────────────
+    function setPrompt(el) {
+        document.getElementById('promptInput').value = el.textContent;
+        document.getElementById('promptInput').focus();
+    }
+
+    // ─── Load Months ─────────────────────────────
+    async function loadMonths() {
+        try {
+            const res = await fetch('/api/report/months');
+            const data = await res.json();
+            const sel = document.getElementById('monthSelect');
+            sel.innerHTML = '';
+            if (data.months && data.months.length > 0) {
+                data.months.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.calmonth;
+                    opt.textContent = `${m.label} (${m.count.toLocaleString()}건)`;
+                    sel.appendChild(opt);
+                });
+                document.getElementById('generateBtn').disabled = false;
+                loadPreview(data.months[0].calmonth);
+            } else {
+                sel.innerHTML = '<option value="">데이터가 없습니다</option>';
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    document.getElementById('monthSelect').addEventListener('change', function() {
+        if (this.value) loadPreview(this.value);
+    });
+
+    async function loadPreview(calmonth) {
+        try {
+            const res = await fetch('/api/report/preview', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ calmonth })
+            });
+            const data = await res.json();
+            if (data.success) {
+                renderPreview(data.data);
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    function fmtNum(v) {
+        if (!v && v !== 0) return '-';
+        v = Number(v);
+        if (Math.abs(v) >= 1e8) return (v/1e8).toFixed(1) + '억';
+        if (Math.abs(v) >= 1e4) return (v/1e4).toFixed(0) + '만';
+        return v.toLocaleString();
+    }
+
+    function renderPreview(data) {
+        Object.values(chartInstances).forEach(c => c.destroy());
+        chartInstances = {};
+
+        const section = document.getElementById('previewSection');
+        section.classList.add('active');
+
+        const total = data.total;
+        const prev = data.prev_month;
+        const divs = data.by_division;
+        const plants = data.by_plant;
+        const channels = data.by_channel;
+        const products = data.top_products;
+
+        function chg(cur, prev) {
+            if (!prev || prev === 0) return { pct: 0, dir: 'up' };
+            const p = ((cur - prev) / Math.abs(prev)) * 100;
+            return { pct: Math.abs(p).toFixed(1), dir: p >= 0 ? 'up' : 'down' };
+        }
+
+        let html = '';
+
+        // Slide 1: Cover
+        html += `
+        <div class="slide-card">
+            <div class="slide-card-header">
+                <span class="slide-num s1">1</span>
+                <h3>표지</h3>
+            </div>
+            <div class="slide-card-body" style="text-align:center; padding:30px;">
+                <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:8px;">수익성 분석 보고서</div>
+                <div style="font-size:1.8rem;font-weight:800;color:var(--text);">
+                    ${data.calmonth.slice(0,4)}년 ${parseInt(data.calmonth.slice(4))}월
+                </div>
+                <div style="margin-top:12px;font-size:0.82rem;color:var(--text-light);">
+                    총 ${data.total_rows.toLocaleString()}건 데이터 기반
+                </div>
+                <div class="kpi-row" style="margin-top:20px;">
+                    <div class="mini-kpi">
+                        <div class="label">전사 총매출</div>
+                        <div class="value" style="color:var(--primary)">${fmtNum(total['총매출'])}</div>
+                    </div>
+                    ${divs.map(d => `
+                    <div class="mini-kpi">
+                        <div class="label">${d['사업부']}</div>
+                        <div class="value">${fmtNum(d['총매출'])}</div>
+                    </div>`).join('')}
+                </div>
+            </div>
+        </div>`;
+
+        // Slide 2: Sales Summary
+        const salesChg = chg(total['총매출'], prev['총매출']);
+        const qtyChg = chg(total['판매수량'], prev['판매수량']);
+        html += `
+        <div class="slide-card">
+            <div class="slide-card-header">
+                <span class="slide-num s2">2</span>
+                <h3>매출 요약 + 전월 비교</h3>
+            </div>
+            <div class="slide-card-body">
+                <div class="kpi-row">
+                    <div class="mini-kpi">
+                        <div class="label">총매출</div>
+                        <div class="value">${fmtNum(total['총매출'])}</div>
+                        <div class="change ${salesChg.dir}">${salesChg.dir === 'up' ? '▲' : '▼'} ${salesChg.pct}%</div>
+                    </div>
+                    <div class="mini-kpi">
+                        <div class="label">판매수량(KG)</div>
+                        <div class="value">${fmtNum(total['판매수량'])}</div>
+                        <div class="change ${qtyChg.dir}">${qtyChg.dir === 'up' ? '▲' : '▼'} ${qtyChg.pct}%</div>
+                    </div>
+                    <div class="mini-kpi">
+                        <div class="label">거래건수</div>
+                        <div class="value">${data.total_rows.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="chart-container"><canvas id="chartDivSales"></canvas></div>
+            </div>
+        </div>`;
+
+        // Slide 3: Detail
+        html += `
+        <div class="slide-card">
+            <div class="slide-card-header">
+                <span class="slide-num s3">3</span>
+                <h3>사업부별 상세 분석</h3>
+            </div>
+            <div class="slide-card-body">
+                <div class="chart-container"><canvas id="chartPlant"></canvas></div>
+                <ul class="data-list" style="margin-top:12px;">
+                    ${channels.map(c => `
+                    <li>
+                        <span class="name">${c['구분']}</span>
+                        <span class="val">${fmtNum(c['총매출'])}</span>
+                    </li>`).join('')}
+                </ul>
+            </div>
+        </div>`;
+
+        // Slide 4: Cost
+        html += `
+        <div class="slide-card">
+            <div class="slide-card-header">
+                <span class="slide-num s4">4</span>
+                <h3>원가 구성 분석</h3>
+            </div>
+            <div class="slide-card-body">
+                <div class="chart-container"><canvas id="chartCost"></canvas></div>
+            </div>
+        </div>`;
+
+        // Slide 5: Products
+        html += `
+        <div class="slide-card">
+            <div class="slide-card-header">
+                <span class="slide-num s5">5</span>
+                <h3>제품별 분석 & 핵심 인사이트</h3>
+            </div>
+            <div class="slide-card-body">
+                <ul class="data-list">
+                    ${products.map((p, i) => `
+                    <li>
+                        <span class="name">${i+1}. ${p['제품명'].substring(0,25)}</span>
+                        <span class="val">${fmtNum(p['총매출'])}</span>
+                    </li>`).join('')}
+                </ul>
+            </div>
+        </div>`;
+
+        document.getElementById('slidePreview').innerHTML = html;
+
+        // Render Charts
+        setTimeout(() => {
+            const ctx1 = document.getElementById('chartDivSales');
+            if (ctx1) {
+                chartInstances.divSales = new Chart(ctx1, {
+                    type: 'bar',
+                    data: {
+                        labels: divs.map(d => d['사업부']),
+                        datasets: [{
+                            label: '당월 매출',
+                            data: divs.map(d => d['총매출']),
+                            backgroundColor: ['#2563EB99', '#7C3AED99'],
+                            borderColor: ['#2563EB', '#7C3AED'],
+                            borderWidth: 2, borderRadius: 8,
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false },
+                            tooltip: { callbacks: { label: ctx => fmtNum(ctx.raw) } } },
+                        scales: { y: { ticks: { callback: v => fmtNum(v) } } }
+                    }
+                });
+            }
+
+            const ctx2 = document.getElementById('chartPlant');
+            if (ctx2) {
+                const colors = ['#2563EB','#7C3AED','#10B981','#F59E0B','#EF4444','#06B6D4'];
+                chartInstances.plant = new Chart(ctx2, {
+                    type: 'bar',
+                    data: {
+                        labels: plants.map(p => p['플랜트']),
+                        datasets: [{
+                            label: '매출',
+                            data: plants.map(p => p['총매출']),
+                            backgroundColor: colors.slice(0, plants.length).map(c => c + '99'),
+                            borderColor: colors.slice(0, plants.length),
+                            borderWidth: 2, borderRadius: 8,
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false },
+                            tooltip: { callbacks: { label: ctx => fmtNum(ctx.raw) } } },
+                        scales: { y: { ticks: { callback: v => fmtNum(v) } } }
+                    }
+                });
+            }
+
+            const ctx3 = document.getElementById('chartCost');
+            if (ctx3 && divs.length >= 1) {
+                const costLabels = ['펄프', '고지', '패드', '약품', '포장재', '인건비', '에너지', '감가상각'];
+                const costKeys = ['재료비_펄프','재료비_고지','재료비_패드','부재료비_약품','부재료비_포장재','인건비','에너지비','감가상각비'];
+                const costVals = costKeys.map(k => {
+                    return divs.reduce((sum, d) => sum + (d[k] || 0), 0);
+                }).filter(v => v !== 0);
+                const filteredLabels = costLabels.filter((_, i) => {
+                    const v = costKeys.map(k => divs.reduce((s, d) => s + (d[k] || 0), 0));
+                    return v[i] !== 0;
+                });
+                const pieColors = ['#2563EB','#7C3AED','#10B981','#F59E0B','#EF4444','#06B6D4','#EC4899','#8B5CF6'];
+                chartInstances.cost = new Chart(ctx3, {
+                    type: 'doughnut',
+                    data: {
+                        labels: filteredLabels,
+                        datasets: [{
+                            data: costVals,
+                            backgroundColor: pieColors.slice(0, costVals.length).map(c => c + 'CC'),
+                            borderColor: '#fff', borderWidth: 2,
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'right', labels: { font: { size: 10 } } },
+                            tooltip: { callbacks: { label: ctx => `${ctx.label}: ${fmtNum(ctx.raw)}` } }
+                        }
+                    }
+                });
+            }
+        }, 100);
+    }
+
+    // ─── Generate Report ─────────────────────────
+    async function generateReport() {
+        const calmonth = document.getElementById('monthSelect').value;
+        if (!calmonth) return;
+
+        const prompt = document.getElementById('promptInput').value.trim();
+        const btn = document.getElementById('generateBtn');
+        btn.disabled = true;
+
+        // Hide/show sections
+        document.getElementById('successMsg').classList.remove('active');
+        document.getElementById('errorMsg').classList.remove('active');
+        const progress = document.getElementById('progressSection');
+        progress.classList.add('active');
+
+        // Animate progress
+        const bar = document.getElementById('progressBar');
+        const steps = prompt
+            ? [
+                { pct: 15, title: '프롬프트 분석 중...', detail: 'GPT가 슬라이드 구성을 최적화하고 있습니다' },
+                { pct: 35, title: '데이터 조회 중...', detail: 'DB에서 매출/원가 데이터를 가져오고 있습니다' },
+                { pct: 55, title: '차트 생성 중...', detail: '매출 비교, 원가 구성, 제품별 분석 차트 생성' },
+                { pct: 75, title: 'PPT 구성 중...', detail: '5장 슬라이드 레이아웃 배치 및 디자인 적용' },
+                { pct: 90, title: '파일 저장 중...', detail: 'PPT 파일 최종 생성' },
+            ]
+            : [
+                { pct: 20, title: '데이터 조회 중...', detail: 'DB에서 매출/원가 데이터를 가져오고 있습니다' },
+                { pct: 45, title: '차트 생성 중...', detail: '매출 비교, 원가 구성, 제품별 분석 차트 생성' },
+                { pct: 70, title: 'PPT 구성 중...', detail: '5장 슬라이드 레이아웃 배치 및 디자인 적용' },
+                { pct: 90, title: '파일 저장 중...', detail: 'PPT 파일 최종 생성' },
+            ];
+
+        let stepIdx = 0;
+        const stepTimer = setInterval(() => {
+            if (stepIdx < steps.length) {
+                bar.style.width = steps[stepIdx].pct + '%';
+                document.getElementById('progressTitle').textContent = steps[stepIdx].title;
+                document.getElementById('progressDetail').textContent = steps[stepIdx].detail;
+                stepIdx++;
+            }
+        }, 1200);
+
+        try {
+            // Build FormData (supports file attachment)
+            const formData = new FormData();
+            formData.append('calmonth', calmonth);
+            formData.append('prompt', prompt);
+            if (currentFile) {
+                formData.append('attachment', currentFile);
+            }
+
+            const res = await fetch('/api/report/ppt', {
+                method: 'POST',
+                body: formData
+            });
+
+            clearInterval(stepTimer);
+
+            if (!res.ok) {
+                let errMsg = '보고서 생성 실패';
+                try {
+                    const errData = await res.json();
+                    errMsg = errData.error || errMsg;
+                } catch {}
+                throw new Error(errMsg);
+            }
+
+            // Download file
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const year = calmonth.slice(0, 4);
+            const month = parseInt(calmonth.slice(4));
+            a.href = url;
+            a.download = `수익성분석_보고서_${year}년_${month}월.pptx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            // Show success
+            bar.style.width = '100%';
+            setTimeout(() => {
+                progress.classList.remove('active');
+                const success = document.getElementById('successMsg');
+                success.classList.add('active');
+                let detail = `${year}년 ${month}월 수익성분석 보고서 (5장) 다운로드 완료`;
+                if (prompt) detail += `\n분석 프롬프트: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"`;
+                if (currentFile) detail += `\n첨부파일: ${currentFile.name}`;
+                document.getElementById('successDetail').textContent = detail;
+            }, 500);
+
+        } catch (e) {
+            clearInterval(stepTimer);
+            progress.classList.remove('active');
+            const errEl = document.getElementById('errorMsg');
+            errEl.textContent = '오류: ' + e.message;
+            errEl.classList.add('active');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+</script>
+</body>
+</html>

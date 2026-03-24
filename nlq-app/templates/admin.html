@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLQ 학습 관리 - Data Dictionary & Examples</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --bg: #f1f5f9;
+            --card: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --purple: #7c3aed;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: 'Pretendard', 'Segoe UI', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, var(--purple), #2563eb);
+            color: white;
+            padding: 24px 0;
+            text-align: center;
+            box-shadow: 0 4px 16px rgba(124,58,237,0.25);
+        }
+        .header h1 { font-size: 1.5rem; font-weight: 800; }
+        .header p { font-size: 0.82rem; opacity: 0.85; margin-top: 6px; }
+        .header .nav-links {
+            margin-top: 12px;
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+        }
+        .header .nav-links a {
+            color: white;
+            text-decoration: none;
+            font-size: 0.82rem;
+            padding: 6px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.3);
+            transition: all 0.2s;
+        }
+        .header .nav-links a:hover {
+            background: rgba(255,255,255,0.15);
+            border-color: rgba(255,255,255,0.6);
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+        /* Tabs */
+        .main-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            background: var(--card);
+            padding: 4px;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+        .main-tab {
+            flex: 1;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-weight: 600;
+            background: transparent;
+            color: var(--text-light);
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .main-tab.active {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+        }
+        .main-tab .badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.25);
+            font-size: 0.7rem;
+            padding: 1px 8px;
+            border-radius: 10px;
+            margin-left: 6px;
+        }
+        .main-tab.active .badge { background: rgba(255,255,255,0.3); }
+
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        /* Cards */
+        .card {
+            background: var(--card);
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border);
+            background: #f8fafc;
+        }
+        .card-header h2 { font-size: 1rem; font-weight: 700; }
+        .card-body { padding: 20px 24px; }
+
+        /* Forms */
+        .form-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 14px;
+            align-items: flex-end;
+        }
+        .form-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .form-group label {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-light);
+        }
+        .form-group input, .form-group textarea, .form-group select {
+            padding: 10px 14px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 0.88rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group textarea:focus {
+            border-color: var(--primary);
+        }
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.84rem;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.84rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .btn:hover { transform: translateY(-1px); }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-danger { background: var(--error); color: #fff; }
+        .btn-warning { background: var(--warning); color: #fff; }
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--border);
+            color: var(--text-light);
+        }
+        .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+        .btn-sm { padding: 6px 14px; font-size: 0.78rem; }
+
+        /* Tables */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.84rem;
+        }
+        .data-table thead th {
+            background: #f8fafc;
+            padding: 10px 14px;
+            text-align: left;
+            font-weight: 700;
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+        }
+        .data-table tbody td {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+        .data-table tbody tr:hover { background: #eff6ff; }
+        .data-table .code { font-family: 'Fira Code', monospace; font-size: 0.8rem; color: var(--primary); }
+        .data-table .count { color: var(--text-light); font-size: 0.78rem; }
+        .data-table .actions { white-space: nowrap; }
+
+        /* Value chips */
+        .value-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: #f0f4ff;
+            border: 1px solid #dbeafe;
+            border-radius: 8px;
+            font-size: 0.78rem;
+            margin: 2px;
+        }
+        .value-chip .del-btn {
+            cursor: pointer;
+            color: var(--error);
+            font-weight: bold;
+            font-size: 0.7rem;
+            opacity: 0.5;
+            transition: opacity 0.2s;
+        }
+        .value-chip .del-btn:hover { opacity: 1; }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 14px 24px;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            font-size: 0.88rem;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        .toast.show { transform: translateX(0); }
+        .toast.success { background: var(--success); }
+        .toast.error { background: var(--error); }
+
+        /* Column expand */
+        .column-detail {
+            display: none;
+            margin-top: 10px;
+            padding: 14px;
+            background: #f8fafc;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+        .column-detail.open { display: block; }
+
+        /* Prompt preview */
+        .prompt-preview {
+            background: #0f172a;
+            color: #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.78rem;
+            line-height: 1.6;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        /* Scrollable table wrapper */
+        .table-scroll {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-light);
+        }
+        .empty-state p { font-size: 0.9rem; }
+
+        /* Add value inline form */
+        .add-value-form {
+            display: none;
+            margin-top: 10px;
+            padding: 12px;
+            background: #fefce8;
+            border-radius: 10px;
+            border: 1px solid #fef08a;
+        }
+        .add-value-form.open { display: block; }
+
+        @media (max-width: 768px) {
+            .form-row { flex-direction: column; }
+            .container { padding: 16px 8px; }
+            .main-tabs { flex-wrap: wrap; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>NLQ 학습 관리 시스템</h1>
+        <p>Data Dictionary / Few-shot Examples / 사용자 피드백 / 비즈니스 룰 관리</p>
+        <div class="nav-links">
+            <a href="/">NLQ 조회 화면으로</a>
+            <a href="#" onclick="refreshAll()">새로고침</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Main Tabs -->
+        <div class="main-tabs">
+            <button class="main-tab active" onclick="switchMainTab('dictionary')">
+                Data Dictionary <span class="badge" id="dictCount">-</span>
+            </button>
+            <button class="main-tab" onclick="switchMainTab('amounts')">
+                금액 컬럼 <span class="badge" id="amtCount">-</span>
+            </button>
+            <button class="main-tab" onclick="switchMainTab('examples')">
+                Few-shot 예시 <span class="badge" id="exCount">-</span>
+            </button>
+            <button class="main-tab" onclick="switchMainTab('feedback')">
+                사용자 피드백 <span class="badge" id="fbCount">-</span>
+            </button>
+            <button class="main-tab" onclick="switchMainTab('rules')">
+                비즈니스 룰 <span class="badge" id="ruleCount">-</span>
+            </button>
+            <button class="main-tab" onclick="switchMainTab('preview')">
+                Prompt 미리보기
+            </button>
+        </div>
+
+        <!-- ═══ Tab 1: Data Dictionary ═══ -->
+        <div class="tab-panel active" id="panel-dictionary">
+            <div class="card">
+                <div class="card-header">
+                    <h2>컬럼 코드값 사전 (Data Dictionary)</h2>
+                    <button class="btn btn-primary" onclick="openAddColumnForm()">+ 컬럼 추가</button>
+                </div>
+                <div class="card-body">
+                    <!-- Add Column Form -->
+                    <div id="addColumnForm" style="display:none; margin-bottom:20px; padding:16px; background:#f0fdf4; border-radius:12px; border:1px solid #bbf7d0;">
+                        <h3 style="font-size:0.9rem; margin-bottom:12px; color:var(--success);">새 컬럼 매핑 추가</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>컬럼명 (영문 대문자)</label>
+                                <input type="text" id="newColName" placeholder="예: PROFIT_CTR" />
+                            </div>
+                            <div class="form-group">
+                                <label>한글 라벨</label>
+                                <input type="text" id="newColLabel" placeholder="예: 손익 센터" />
+                            </div>
+                            <div class="form-group">
+                                <label>설명</label>
+                                <input type="text" id="newColDesc" placeholder="예: 손익 센터 코드" />
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-success btn-sm" onclick="saveNewColumn()">저장</button>
+                            <button class="btn btn-outline btn-sm" onclick="closeAddColumnForm()">취소</button>
+                        </div>
+                    </div>
+
+                    <div class="table-scroll" id="dictTableWrap">
+                        <p style="color:var(--text-light);">로딩 중...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ Tab 2: Amount Columns ═══ -->
+        <div class="tab-panel" id="panel-amounts">
+            <div class="card">
+                <div class="card-header">
+                    <h2>금액 컬럼 매핑 (ZAMT001 ~ ZAMT064)</h2>
+                    <button class="btn btn-primary" onclick="openAddAmountForm()">+ 금액 컬럼 추가</button>
+                </div>
+                <div class="card-body">
+                    <div id="addAmountForm" style="display:none; margin-bottom:20px; padding:16px; background:#f0fdf4; border-radius:12px; border:1px solid #bbf7d0;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>컬럼 코드</label>
+                                <input type="text" id="newAmtCode" placeholder="예: ZAMT001" />
+                            </div>
+                            <div class="form-group">
+                                <label>한글 라벨</label>
+                                <input type="text" id="newAmtLabel" placeholder="예: 총매출" />
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:flex-end;">
+                                <button class="btn btn-success btn-sm" onclick="saveNewAmount()">저장</button>
+                                <button class="btn btn-outline btn-sm" onclick="closeAddAmountForm()">취소</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-scroll" id="amountTableWrap">
+                        <p style="color:var(--text-light);">로딩 중...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ Tab 3: Few-shot Examples ═══ -->
+        <div class="tab-panel" id="panel-examples">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Few-shot 예시 (질문-SQL 쌍)</h2>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-primary" onclick="openAddExampleForm()">+ 예시 추가</button>
+                        <button class="btn btn-warning btn-sm" onclick="resetExamples()">기본값 초기화</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="addExampleForm" style="display:none; margin-bottom:20px; padding:16px; background:#f0fdf4; border-radius:12px; border:1px solid #bbf7d0;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>질문 (자연어)</label>
+                                <input type="text" id="newExQuestion" placeholder="예: 손익센터별 총매출 합계" />
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>정답 SQL</label>
+                                <textarea id="newExSQL" placeholder="SELECT ... FROM MOD_BOARD_PROFIT_ANALYSIS ..."></textarea>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-success btn-sm" onclick="saveNewExample()">저장</button>
+                            <button class="btn btn-outline btn-sm" onclick="closeAddExampleForm()">취소</button>
+                        </div>
+                    </div>
+                    <div class="table-scroll" id="examplesTableWrap">
+                        <p style="color:var(--text-light);">로딩 중...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ Tab 4: User Feedback ═══ -->
+        <div class="tab-panel" id="panel-feedback">
+            <div class="card">
+                <div class="card-header">
+                    <h2>사용자 피드백 (수정된 SQL)</h2>
+                    <button class="btn btn-danger btn-sm" onclick="clearAllFeedback()">전체 초기화</button>
+                </div>
+                <div class="card-body">
+                    <div class="table-scroll" id="feedbackTableWrap">
+                        <p style="color:var(--text-light);">로딩 중...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ Tab 5: Business Rules ═══ -->
+        <div class="tab-panel" id="panel-rules">
+            <div class="card">
+                <div class="card-header">
+                    <h2>비즈니스 룰 (SQL 생성 규칙)</h2>
+                    <button class="btn btn-primary" onclick="addNewRule()">+ 룰 추가</button>
+                </div>
+                <div class="card-body">
+                    <div id="rulesContainer">
+                        <p style="color:var(--text-light);">로딩 중...</p>
+                    </div>
+                    <div style="margin-top:16px; display:flex; gap:8px;">
+                        <button class="btn btn-success" onclick="saveRules()">규칙 저장</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ Tab 6: Prompt Preview ═══ -->
+        <div class="tab-panel" id="panel-preview">
+            <div class="card">
+                <div class="card-header">
+                    <h2>현재 System Prompt 미리보기</h2>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <span id="promptLength" style="font-size:0.78rem; color:var(--text-light);"></span>
+                        <button class="btn btn-primary btn-sm" onclick="loadPromptPreview()">새로고침</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="prompt-preview" id="promptPreview">로딩 중...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+<script>
+    // ─── State ───────────────────────────────────
+    let dictionaryData = {};
+    let currentRules = [];
+
+    // ─── Init ────────────────────────────────────
+    window.addEventListener('DOMContentLoaded', refreshAll);
+
+    async function refreshAll() {
+        await Promise.all([
+            loadDictionary(),
+            loadExamples(),
+            loadFeedback(),
+            loadRules(),
+            loadPromptPreview()
+        ]);
+    }
+
+    // ─── Tab Switching ───────────────────────────
+    function switchMainTab(tabId) {
+        document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        event.target.closest('.main-tab').classList.add('active');
+        document.getElementById('panel-' + tabId).classList.add('active');
+    }
+
+    // ─── Toast ───────────────────────────────────
+    function showToast(msg, type = 'success') {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.className = `toast ${type} show`;
+        setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Data Dictionary
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    async function loadDictionary() {
+        try {
+            const res = await fetch('/api/dictionary');
+            dictionaryData = await res.json();
+            renderDictionary();
+            renderAmounts();
+        } catch (e) {
+            showToast('Dictionary 로드 실패', 'error');
+        }
+    }
+
+    function renderDictionary() {
+        const cols = dictionaryData.columns || {};
+        const keys = Object.keys(cols);
+        document.getElementById('dictCount').textContent = keys.length;
+
+        if (keys.length === 0) {
+            document.getElementById('dictTableWrap').innerHTML =
+                '<div class="empty-state"><p>등록된 컬럼 매핑이 없습니다.</p></div>';
+            return;
+        }
+
+        let html = `<table class="data-table"><thead><tr>
+            <th>컬럼명</th><th>한글 라벨</th><th>설명</th><th>코드값 매핑</th><th>작업</th>
+        </tr></thead><tbody>`;
+
+        for (const [colName, info] of Object.entries(cols)) {
+            const values = info.values || {};
+            const valueCount = Object.keys(values).length;
+            let valueChips = '';
+            for (const [code, vInfo] of Object.entries(values)) {
+                valueChips += `<span class="value-chip">
+                    <span class="code">${code}</span> = ${vInfo.label || code}
+                    ${vInfo.count ? `<span class="count">(${vInfo.count.toLocaleString()})</span>` : ''}
+                    <span class="del-btn" onclick="deleteValue('${colName}','${code}')" title="삭제">&times;</span>
+                </span>`;
+            }
+
+            html += `<tr>
+                <td><strong class="code">${colName}</strong></td>
+                <td>${info.label || ''}</td>
+                <td style="font-size:0.78rem;color:var(--text-light)">${info.description || ''}</td>
+                <td>
+                    <div>${valueChips || '<span style="color:#94a3b8;font-size:0.78rem">코드값 없음</span>'}</div>
+                    <button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="toggleAddValue('${colName}')">+ 코드값 추가</button>
+                    <div class="add-value-form" id="addValueForm_${colName}">
+                        <div class="form-row" style="margin-bottom:8px">
+                            <div class="form-group">
+                                <label>코드값</label>
+                                <input type="text" id="valCode_${colName}" placeholder="예: 0000001000" />
+                            </div>
+                            <div class="form-group">
+                                <label>한글 의미</label>
+                                <input type="text" id="valLabel_${colName}" placeholder="예: 제지사업부" />
+                            </div>
+                            <div class="form-group" style="max-width:100px">
+                                <label>건수</label>
+                                <input type="number" id="valCount_${colName}" placeholder="0" />
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn btn-success btn-sm" onclick="saveValue('${colName}')">추가</button>
+                            <button class="btn btn-outline btn-sm" onclick="toggleAddValue('${colName}')">취소</button>
+                        </div>
+                    </div>
+                </td>
+                <td class="actions">
+                    <button class="btn btn-danger btn-sm" onclick="deleteColumn('${colName}')">삭제</button>
+                </td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        document.getElementById('dictTableWrap').innerHTML = html;
+    }
+
+    function openAddColumnForm() {
+        document.getElementById('addColumnForm').style.display = 'block';
+        document.getElementById('newColName').focus();
+    }
+    function closeAddColumnForm() {
+        document.getElementById('addColumnForm').style.display = 'none';
+    }
+
+    async function saveNewColumn() {
+        const name = document.getElementById('newColName').value.trim();
+        const label = document.getElementById('newColLabel').value.trim();
+        const desc = document.getElementById('newColDesc').value.trim();
+        if (!name) { showToast('컬럼명을 입력하세요', 'error'); return; }
+
+        try {
+            const res = await fetch('/api/dictionary/column', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ column_name: name, label, description: desc, values: {} })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                closeAddColumnForm();
+                document.getElementById('newColName').value = '';
+                document.getElementById('newColLabel').value = '';
+                document.getElementById('newColDesc').value = '';
+                await loadDictionary();
+            } else {
+                showToast(data.error || '저장 실패', 'error');
+            }
+        } catch (e) { showToast('오류: ' + e.message, 'error'); }
+    }
+
+    async function deleteColumn(colName) {
+        if (!confirm(`컬럼 '${colName}'을(를) 삭제하시겠습니까?`)) return;
+        try {
+            const res = await fetch(`/api/dictionary/column/${colName}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                await loadDictionary();
+            } else {
+                showToast(data.error, 'error');
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    function toggleAddValue(colName) {
+        const form = document.getElementById(`addValueForm_${colName}`);
+        form.classList.toggle('open');
+    }
+
+    async function saveValue(colName) {
+        const code = document.getElementById(`valCode_${colName}`).value.trim();
+        const label = document.getElementById(`valLabel_${colName}`).value.trim();
+        const count = parseInt(document.getElementById(`valCount_${colName}`).value) || 0;
+        if (!code) { showToast('코드값을 입력하세요', 'error'); return; }
+
+        try {
+            const res = await fetch(`/api/dictionary/column/${colName}/value`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ code, label, count })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                await loadDictionary();
+            } else {
+                showToast(data.error, 'error');
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    async function deleteValue(colName, code) {
+        if (!confirm(`'${colName}' 컬럼에서 코드값 '${code}'를 삭제하시겠습니까?`)) return;
+        try {
+            const res = await fetch(`/api/dictionary/column/${colName}/value/${code}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                await loadDictionary();
+            } else {
+                showToast(data.error, 'error');
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Amount Columns
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    function renderAmounts() {
+        const amts = dictionaryData.amount_columns || {};
+        const keys = Object.keys(amts);
+        document.getElementById('amtCount').textContent = keys.length;
+
+        if (keys.length === 0) {
+            document.getElementById('amountTableWrap').innerHTML =
+                '<div class="empty-state"><p>등록된 금액 컬럼이 없습니다.</p></div>';
+            return;
+        }
+
+        let html = `<table class="data-table"><thead><tr>
+            <th>#</th><th>컬럼 코드</th><th>한글 라벨</th><th>작업</th>
+        </tr></thead><tbody>`;
+
+        keys.sort().forEach((code, i) => {
+            html += `<tr>
+                <td style="color:var(--text-light)">${i+1}</td>
+                <td><span class="code">${code}</span></td>
+                <td>${amts[code]}</td>
+                <td class="actions">
+                    <button class="btn btn-danger btn-sm" onclick="deleteAmount('${code}')">삭제</button>
+                </td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        document.getElementById('amountTableWrap').innerHTML = html;
+    }
+
+    function openAddAmountForm() {
+        document.getElementById('addAmountForm').style.display = 'block';
+        document.getElementById('newAmtCode').focus();
+    }
+    function closeAddAmountForm() {
+        document.getElementById('addAmountForm').style.display = 'none';
+    }
+
+    async function saveNewAmount() {
+        const code = document.getElementById('newAmtCode').value.trim();
+        const label = document.getElementById('newAmtLabel').value.trim();
+        if (!code || !label) { showToast('코드와 라벨을 입력하세요', 'error'); return; }
+
+        try {
+            const res = await fetch('/api/dictionary/amount', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ column_code: code, label })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                closeAddAmountForm();
+                document.getElementById('newAmtCode').value = '';
+                document.getElementById('newAmtLabel').value = '';
+                await loadDictionary();
+            } else {
+                showToast(data.error, 'error');
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    async function deleteAmount(code) {
+        if (!confirm(`금액 컬럼 '${code}'를 삭제하시겠습니까?`)) return;
+        try {
+            const res = await fetch(`/api/dictionary/amount/${code}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                await loadDictionary();
+            } else {
+                showToast(data.error, 'error');
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Few-shot Examples
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    async function loadExamples() {
+        try {
+            const res = await fetch('/api/examples');
+            const data = await res.json();
+            renderExamples(data.examples || []);
+            document.getElementById('exCount').textContent = data.count || 0;
+        } catch (e) { showToast('예시 로드 실패', 'error'); }
+    }
+
+    function renderExamples(examples) {
+        if (examples.length === 0) {
+            document.getElementById('examplesTableWrap').innerHTML =
+                '<div class="empty-state"><p>등록된 예시가 없습니다.</p></div>';
+            return;
+        }
+
+        let html = `<table class="data-table"><thead><tr>
+            <th>#</th><th>질문</th><th>SQL</th><th>작업</th>
+        </tr></thead><tbody>`;
+
+        examples.forEach((ex, i) => {
+            const sqlShort = (ex.sql || '').substring(0, 100) + (ex.sql && ex.sql.length > 100 ? '...' : '');
+            html += `<tr>
+                <td style="color:var(--text-light)">${i+1}</td>
+                <td style="max-width:250px">${ex.question}</td>
+                <td style="max-width:400px"><code style="font-size:0.76rem;color:var(--text-light);word-break:break-all">${escapeHtml(sqlShort)}</code></td>
+                <td class="actions">
+                    <button class="btn btn-danger btn-sm" onclick="deleteExample('${escapeJs(ex.question)}')">삭제</button>
+                </td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        document.getElementById('examplesTableWrap').innerHTML = html;
+    }
+
+    function openAddExampleForm() {
+        document.getElementById('addExampleForm').style.display = 'block';
+        document.getElementById('newExQuestion').focus();
+    }
+    function closeAddExampleForm() {
+        document.getElementById('addExampleForm').style.display = 'none';
+    }
+
+    async function saveNewExample() {
+        const question = document.getElementById('newExQuestion').value.trim();
+        const sql = document.getElementById('newExSQL').value.trim();
+        if (!question || !sql) { showToast('질문과 SQL을 모두 입력하세요', 'error'); return; }
+
+        try {
+            const res = await fetch('/api/examples', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ question, sql })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                closeAddExampleForm();
+                document.getElementById('newExQuestion').value = '';
+                document.getElementById('newExSQL').value = '';
+                await loadExamples();
+            } else {
+                showToast(data.error, 'error');
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    async function deleteExample(question) {
+        if (!confirm('이 예시를 삭제하시겠습니까?')) return;
+        try {
+            const res = await fetch('/api/examples', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ question })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                await loadExamples();
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    async function resetExamples() {
+        if (!confirm('Few-shot 예시를 기본값으로 초기화하시겠습니까?')) return;
+        try {
+            const res = await fetch('/api/examples', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({})
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                await loadExamples();
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // User Feedback
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    async function loadFeedback() {
+        try {
+            const res = await fetch('/api/feedback');
+            const data = await res.json();
+            renderFeedback(data.examples || []);
+            document.getElementById('fbCount').textContent = data.count || 0;
+        } catch (e) { showToast('피드백 로드 실패', 'error'); }
+    }
+
+    function renderFeedback(examples) {
+        if (examples.length === 0) {
+            document.getElementById('feedbackTableWrap').innerHTML =
+                '<div class="empty-state"><p>아직 사용자 피드백이 없습니다. NLQ 조회 화면에서 SQL 수정 시 자동으로 저장됩니다.</p></div>';
+            return;
+        }
+
+        let html = `<table class="data-table"><thead><tr>
+            <th>#</th><th>질문</th><th>수정된 SQL</th><th>시간</th><th>작업</th>
+        </tr></thead><tbody>`;
+
+        examples.forEach((ex, i) => {
+            const sqlShort = (ex.corrected_sql || '').substring(0, 100) + '...';
+            html += `<tr>
+                <td style="color:var(--text-light)">${i+1}</td>
+                <td style="max-width:250px">${ex.question}</td>
+                <td style="max-width:350px"><code style="font-size:0.76rem;color:var(--text-light);word-break:break-all">${escapeHtml(sqlShort)}</code></td>
+                <td style="font-size:0.76rem;color:var(--text-light);white-space:nowrap">${ex.timestamp || ''}</td>
+                <td class="actions">
+                    <button class="btn btn-danger btn-sm" onclick="deleteFeedback('${escapeJs(ex.question)}')">삭제</button>
+                </td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        document.getElementById('feedbackTableWrap').innerHTML = html;
+    }
+
+    async function deleteFeedback(question) {
+        if (!confirm('이 피드백을 삭제하시겠습니까?')) return;
+        try {
+            const res = await fetch('/api/feedback', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ question })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                await loadFeedback();
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    async function clearAllFeedback() {
+        if (!confirm('모든 사용자 피드백을 초기화하시겠습니까?')) return;
+        try {
+            const res = await fetch('/api/feedback', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({})
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                await loadFeedback();
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Business Rules
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    async function loadRules() {
+        try {
+            const res = await fetch('/api/dictionary/rules');
+            const data = await res.json();
+            currentRules = data.rules || [];
+            renderRules();
+            document.getElementById('ruleCount').textContent = currentRules.length;
+        } catch (e) { showToast('룰 로드 실패', 'error'); }
+    }
+
+    function renderRules() {
+        if (currentRules.length === 0) {
+            document.getElementById('rulesContainer').innerHTML =
+                '<div class="empty-state"><p>등록된 비즈니스 룰이 없습니다.</p></div>';
+            return;
+        }
+
+        let html = '';
+        currentRules.forEach((rule, i) => {
+            html += `<div class="form-row" style="margin-bottom:8px;">
+                <div class="form-group" style="flex:0 0 40px;">
+                    <span style="font-weight:700;color:var(--primary);font-size:0.9rem;">${i+1}.</span>
+                </div>
+                <div class="form-group">
+                    <input type="text" value="${escapeHtml(rule)}" onchange="currentRules[${i}]=this.value" />
+                </div>
+                <button class="btn btn-danger btn-sm" style="align-self:center;" onclick="removeRule(${i})">삭제</button>
+            </div>`;
+        });
+        document.getElementById('rulesContainer').innerHTML = html;
+    }
+
+    function addNewRule() {
+        currentRules.push('');
+        renderRules();
+        // Focus the last input
+        const inputs = document.querySelectorAll('#rulesContainer input');
+        if (inputs.length > 0) inputs[inputs.length - 1].focus();
+    }
+
+    function removeRule(idx) {
+        currentRules.splice(idx, 1);
+        renderRules();
+    }
+
+    async function saveRules() {
+        // Refresh values from inputs
+        const inputs = document.querySelectorAll('#rulesContainer input');
+        currentRules = Array.from(inputs).map(inp => inp.value.trim()).filter(v => v);
+
+        try {
+            const res = await fetch('/api/dictionary/rules', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ rules: currentRules })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message);
+                document.getElementById('ruleCount').textContent = currentRules.length;
+            } else {
+                showToast(data.error, 'error');
+            }
+        } catch (e) { showToast('오류', 'error'); }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Prompt Preview
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    async function loadPromptPreview() {
+        try {
+            const res = await fetch('/api/prompt-preview');
+            const data = await res.json();
+            document.getElementById('promptPreview').textContent = data.prompt;
+            document.getElementById('promptLength').textContent = `${data.length.toLocaleString()} chars`;
+        } catch (e) {
+            document.getElementById('promptPreview').textContent = '로드 실패';
+        }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Helpers
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    function escapeHtml(str) {
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function escapeJs(str) {
+        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
+</script>
+</body>
+</html>
