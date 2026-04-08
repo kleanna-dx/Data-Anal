@@ -556,13 +556,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans K
 .chart-card{background:var(--c-card);border-radius:var(--r);padding:24px;box-shadow:var(--shadow)}
 .chart-card h3{font-size:15px;font-weight:600;color:var(--c-text);margin-bottom:16px;display:flex;align-items:center;gap:8px}
 
-/* CO2 SUMMARY */
-.co2-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px}
-.co2-box{border-radius:var(--r);padding:24px;text-align:center}
-.co2-box .co2-label{font-size:13px;font-weight:500;margin-bottom:6px}
-.co2-box .co2-val{font-size:34px;font-weight:800;line-height:1.1}
-.co2-box .co2-unit{font-size:12px;margin-top:4px;opacity:.8}
-
 /* FORMS */
 .step-tabs{display:flex;gap:6px;margin-bottom:24px;flex-wrap:wrap;align-items:center}
 .step-tab{padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;border:2px solid transparent;background:#e5e7eb;color:#6b7280}
@@ -626,11 +619,6 @@ tbody tr:hover{background:#f0fdf4}
 /* TOAST */
 .toast{position:fixed;top:20px;right:20px;z-index:9999;padding:14px 28px;border-radius:12px;color:#fff;font-size:14px;font-weight:500;animation:toastIn .35s ease;box-shadow:0 6px 24px rgba(0,0,0,.2);display:none;backdrop-filter:blur(8px)}
 @keyframes toastIn{from{transform:translateY(-20px) scale(.95);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}
-
-/* COLLECTOR TABLE */
-.collector-tbl{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
-.collector-tbl th{background:#f9fafb;padding:8px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--c-text2);border-bottom:2px solid var(--c-border)}
-.collector-tbl td{padding:8px 10px;border-bottom:1px solid #f3f4f6}
 
 /* LOADING */
 .loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--c-text3)}
@@ -828,23 +816,7 @@ tbody tr:hover{background:#f0fdf4}
       <div class="chart-card"><h3><i class="fas fa-chart-pie" style="color:#14b8a6"></i>폐기물 종류별 비중</h3><div style="position:relative;height:280px"><canvas id="chType"></canvas></div></div>
       <div class="chart-card"><h3><i class="fas fa-building" style="color:#8b5cf6"></i>배출처별 처리량</h3><div style="position:relative;height:280px"><canvas id="chCenter"></canvas></div></div>
     </div>
-    <div class="card" style="margin-bottom:24px">
-      <h3 style="font-size:15px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px"><i class="fas fa-leaf" style="color:#22c55e"></i>탄소 배출/절감 요약</h3>
-      <div class="co2-grid">
-        <div class="co2-box" style="background:#fef2f2"><div class="co2-label" style="color:#dc2626">운송 CO2 배출</div><div class="co2-val" style="color:#b91c1c" id="co2e">-</div><div class="co2-unit" style="color:#f87171">kg CO2</div></div>
-        <div class="co2-box" style="background:#f0fdf4"><div class="co2-label" style="color:#16a34a">재활용 CO2 절감</div><div class="co2-val" style="color:#15803d" id="co2s">-</div><div class="co2-unit" style="color:#4ade80">kg CO2</div></div>
-        <div class="co2-box" style="background:#eff6ff"><div class="co2-label" style="color:#2563eb">순 CO2 절감</div><div class="co2-val" style="color:#1d4ed8" id="co2n">-</div><div class="co2-unit" style="color:#60a5fa">kg CO2</div></div>
-      </div>
-    </div>
-    <div class="card">
-      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px"><i class="fas fa-truck" style="color:#3b82f6"></i>수거 업체별 통계</h3>
-      <div class="tbl-wrap">
-        <table class="collector-tbl">
-          <thead><tr><th>업체명</th><th>수거 건수</th><th>수거 중량(kg)</th><th>이동 거리(km)</th></tr></thead>
-          <tbody id="collectorBody"><tr><td colspan="4" style="text-align:center;color:var(--c-text3);padding:20px">로딩 중...</td></tr></tbody>
-        </table>
-      </div>
-    </div>
+
   </div>
 </div>
 
@@ -1328,14 +1300,6 @@ function renderDash(d){
   document.getElementById('k-loss').textContent=(d.avgLossRate||0).toFixed(1);
   document.getElementById('k-dist').textContent=fmt(d.totalDistanceKm);
   document.getElementById('k-co2').textContent=fmt(d.totalCo2SavingKg);
-  const em=d.totalCo2EmissionKg||0,sv=d.totalCo2SavingKg||0;
-  document.getElementById('co2e').textContent=fmt(em);
-  document.getElementById('co2s').textContent=fmt(sv);
-  document.getElementById('co2n').textContent=fmt(sv-em);
-  const cs=d.collectorStats||[];
-  const cb=document.getElementById('collectorBody');
-  if(cs.length){cb.innerHTML=cs.map(r=>'<tr><td style="font-weight:600">'+r.name+'</td><td>'+r.cnt+'건</td><td style="font-weight:600">'+fmt(r.wt)+'</td><td>'+fmt(r.dist)+'</td></tr>').join('')}
-  else{cb.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--c-text3);padding:20px">데이터 없음</td></tr>'}
   if(ch1)ch1.destroy();if(ch2)ch2.destroy();if(ch3)ch3.destroy();if(ch4)ch4.destroy();
   const ds=d.dailyStats||[];
   ch1=new Chart(document.getElementById('chDaily'),{type:'bar',data:{labels:ds.map(x=>{const p=x.dt.split('-');return p[1]+'/'+p[2]}),datasets:[{label:'배출량(kg)',data:ds.map(x=>x.wt),backgroundColor:'rgba(16,185,129,.65)',borderColor:'#10b981',borderWidth:1,borderRadius:6,barPercentage:.6},{label:'건수',data:ds.map(x=>x.cnt),type:'line',borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.08)',yAxisID:'y1',tension:.4,pointRadius:5,pointBackgroundColor:'#3b82f6',fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{font:{size:12}}}},scales:{y:{beginAtZero:true,title:{display:true,text:'kg',font:{size:11}},grid:{color:'rgba(0,0,0,.04)'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'건수',font:{size:11}}},x:{grid:{display:false}}}}});
