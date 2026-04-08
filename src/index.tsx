@@ -30,21 +30,12 @@ const SCOPE2_COMPRESS_POWER = 0.015 // kWh/kg (압축기 전력원단위)
 //   GHG Protocol Scope 3 Category 5: Waste Generated in Operations
 //   폐기물 종류별 재활용 회피 배출계수 (kgCO₂e/kg recycled output)
 const SCOPE3_AVOID_FACTORS: Record<string, number> = {
-  'PAPER':   2.86,   // 종이류: 원료 대체 + 에너지 절감 (GHG Protocol / IPCC)
-  'PAPER_WASTE': 2.86, // 종이 폐기물: PAPER와 동일
-  'CARDBOARD': 2.86,   // 골판지: 종이류와 동일 회피계수
-  'NEWSPAPER': 2.86,   // 신문지: 종이류와 동일 회피계수
-  'MIXED_PAPER': 2.86, // 혼합 종이: 종이류와 동일 회피계수
-  'PLASTIC': 1.53,   // 플라스틱: 석유 기반 원료 대체 효과
-  'METAL':   4.10,   // 금속류: 광석 제련 대비 재활용 절감
-  'GLASS':   0.42,   // 유리류: 원료 제조 에너지 절감
-  'TEXTILE': 3.17,   // 섬유류: 원면/합성섬유 제조 대체
-  'FOOD':    0.58,   // 음식물: 퇴비화·혐기처리 메탄 회피
-  'WOOD':    1.76,   // 목재류: 재활용 에너지 절감
-  'OTHER':   1.80    // 기타: 가중 평균값
+  'PAPER_RESOURCE': 2.86,   // 종이자원: 원목 펄프 대비 재생펄프 에너지 절감 (GHG Protocol / IPCC)
+  'VINYL':          1.53,   // 비닐: PE/PP 석유 기반 원료 대체 + 소각 회피 효과
+  'GENERAL_WASTE':  0.58    // 생활폐기물: 매립 메탄 회피 + 소각 에너지 회수 가중 평균
 }
 function getScope3Factor(wasteType: string): number {
-  return SCOPE3_AVOID_FACTORS[wasteType] || SCOPE3_AVOID_FACTORS['OTHER']
+  return SCOPE3_AVOID_FACTORS[wasteType] || SCOPE3_AVOID_FACTORS['GENERAL_WASTE']
 }
 
 async function genTrackingNo(db: D1Database) {
@@ -509,7 +500,7 @@ app.get('/waste-api/dashboard', async (c) => {
       factors: {
         scope1: 'SCOPE1: ' + SCOPE1_DIESEL_FACTOR + ' kgCO₂/km (경유 차량, 환경부 국가 배출계수)',
         scope2: 'SCOPE2: ' + SCOPE2_GRID_FACTOR + ' kgCO₂/kWh × ' + SCOPE2_COMPRESS_POWER + ' kWh/kg (한국전력 2024, 압축기 전력원단위)',
-        scope3: 'SCOPE3: 폐기물 종류별 회피계수 (GHG Protocol Category 5 / IPCC)'
+        scope3: 'SCOPE3: 폐기물 종류별 회피계수 — 종이자원 2.86 / 비닐 1.53 / 생활폐기물 0.58 kgCO₂e/kg (GHG Protocol Category 5 / IPCC)'
       }
     },
     stageStats: stageQ.results,
@@ -578,7 +569,7 @@ app.get('/waste-api/dashboard/detail', async (c) => {
       const factors = {
         scope1: { formula: '거리(km) × 0.2148 kgCO₂/km', detail: '경유 차량: 연비 0.0826 L/km × 배출계수 2.6 kgCO₂/L', source: '환경부 국가 온실가스 배출계수' },
         scope2: { formula: '처리량(kg) × 0.015 kWh/kg × 0.4594 kgCO₂/kWh', detail: '압축기 전력원단위 × 한국전력 전력배출계수', source: '한국전력 2024, 산업 평균' },
-        scope3: { formula: '재활용산출(kg) × 종류별 회피계수', detail: '종이 2.86 / 플라스틱 1.53 / 금속 4.10 / 유리 0.42 / 섬유 3.17 / 음식물 0.58 / 목재 1.76 / 기타 1.80 kgCO₂e/kg', source: 'GHG Protocol Scope 3 Category 5, IPCC' }
+        scope3: { formula: '재활용산출(kg) × 종류별 회피계수', detail: '종이자원 2.86 / 비닐 1.53 / 생활폐기물 0.58 kgCO₂e/kg', source: 'GHG Protocol Scope 3 Category 5, IPCC' }
       }
       return c.json(ok({ scope1: scope1Detail.results, scope2: scope2Detail.results, scope3: scope3Detail.results, scope3ByType: scope3ByType.results, factors }))
     }
@@ -1225,7 +1216,7 @@ tbody tr:hover{background:#f0fdf4}
 
 <script>
 /* ===== CONSTANTS ===== */
-const W={PAPER_WASTE:'폐지/파지',CARDBOARD:'골판지',MIXED_PAPER:'혼합 폐지',NEWSPAPER:'신문지',OTHER:'기타'};
+const W={PAPER_RESOURCE:'종이자원',VINYL:'비닐',GENERAL_WASTE:'생활폐기물'};
 const SL={DISCHARGE:'배출',COLLECTION:'수거',COMPRESSION:'압축',RECYCLING:'재활용',PRODUCTION:'생산'};
 const SO={DISCHARGE:1,COLLECTION:2,COMPRESSION:3,RECYCLING:4,PRODUCTION:5};
 const SI={DISCHARGE:'fa-truck-loading',COLLECTION:'fa-truck',COMPRESSION:'fa-compress-arrows-alt',RECYCLING:'fa-recycle',PRODUCTION:'fa-industry'};
@@ -1806,14 +1797,14 @@ function renderCo2Detail(el,d){
 
   // === Scope 3 Tab ===
   html+='<div id="dt-c-scope3" class="detail-sub">';
-  html+='<div style="background:#f0fdf4;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#166534"><i class="fas fa-recycle" style="margin-right:4px"></i><b>Scope 3 산출식:</b> 재활용산출량(kg) × 폐기물종류별 회피계수(kgCO₂e/kg)<br><span style="color:#6b7280">종이 2.86 | 플라스틱 1.53 | 금속 4.10 | 유리 0.42 | 섬유 3.17 | 음식물 0.58 | 목재 1.76 | 기타 1.80</span><br><span style="color:#6b7280">출처: GHG Protocol Scope 3 Category 5 (Waste Generated in Operations), IPCC 폐기물 부문</span></div>';
+  html+='<div style="background:#f0fdf4;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#166534"><i class="fas fa-recycle" style="margin-right:4px"></i><b>Scope 3 산출식:</b> 재활용산출량(kg) × 폐기물종류별 회피계수(kgCO₂e/kg)<br><span style="color:#6b7280">종이자원 2.86 | 비닐 1.53 | 생활폐기물 0.58 kgCO₂e/kg</span><br><span style="color:#6b7280">출처: GHG Protocol Scope 3 Category 5 (Waste Generated in Operations), IPCC 폐기물 부문</span></div>';
   // 종류별 요약
   if(d.scope3ByType&&d.scope3ByType.length){
-    const WT_NAME={PAPER:"종이류",PAPER_WASTE:"종이 폐기물",CARDBOARD:"골판지",NEWSPAPER:"신문지",MIXED_PAPER:"혼합 종이",PLASTIC:"플라스틱",METAL:"금속류",GLASS:"유리류",TEXTILE:"섬유류",FOOD:"음식물",WOOD:"목재류",OTHER:"기타"};
+    const WT_NAME={PAPER_RESOURCE:"종이자원",VINYL:"비닐",GENERAL_WASTE:"생활폐기물"};
     html+='<div style="margin-bottom:14px"><div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#1e293b"><i class="fas fa-chart-pie" style="color:#16a34a;margin-right:4px"></i>폐기물 종류별 Scope 3 절감</div>';
     html+='<table class="detail-tbl"><thead><tr><th>폐기물 종류</th><th style="text-align:right">건수</th><th style="text-align:right">재활용산출(kg)</th><th style="text-align:right">회피계수</th><th style="text-align:right">CO₂ 절감(kgCO₂e)</th></tr></thead><tbody>';
     d.scope3ByType.forEach(r=>{
-      const factor=({PAPER:2.86,PAPER_WASTE:2.86,CARDBOARD:2.86,NEWSPAPER:2.86,MIXED_PAPER:2.86,PLASTIC:1.53,METAL:4.10,GLASS:0.42,TEXTILE:3.17,FOOD:0.58,WOOD:1.76})[r.wasteType]||1.80;
+      const factor=({PAPER_RESOURCE:2.86,VINYL:1.53,GENERAL_WASTE:0.58})[r.wasteType]||0.58;
       html+='<tr><td style="font-weight:600">'+(WT_NAME[r.wasteType]||r.wasteType)+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.totalOut)+'</td><td class="num">'+factor+'</td><td class="num" style="color:#15803d;font-weight:800">'+fmt(r.co2Save)+'</td></tr>';
     });
     html+='</tbody></table></div>';
@@ -1844,7 +1835,7 @@ function renderCo2Detail(el,d){
   html+='<div style="background:#f0fdf4;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;margin-bottom:8px;color:#14532d">CO₂e(kg) = 재활용산출량(kg) × 종류별_회피계수(kgCO₂e/kg)</div>';
   html+='<div style="font-size:11px;color:#6b7280;margin-bottom:8px"><b>적용 대상:</b> GHG Protocol Scope 3 Category 5 - 폐기물 재활용에 의한 원료 대체 효과<br><b>출처:</b> GHG Protocol Technical Guidance / IPCC 폐기물 부문 가이드라인</div>';
   html+='<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#f0fdf4"><th style="padding:6px 8px;text-align:left;border-bottom:2px solid #bbf7d0">폐기물 종류</th><th style="padding:6px 8px;text-align:right;border-bottom:2px solid #bbf7d0">회피계수</th><th style="padding:6px 8px;text-align:left;border-bottom:2px solid #bbf7d0">산출 근거</th></tr></thead><tbody>';
-  const ftbl=[["종이류 (PAPER)","2.86","원목 펄프 제조 대비 재생펄프 에너지 절감"],["플라스틱 (PLASTIC)","1.53","석유 기반 원료 대체 + 소각 회피"],["금속류 (METAL)","4.10","광석 제련·정련 대비 재활용 에너지 절감"],["유리류 (GLASS)","0.42","규사 용융 대비 유리 cullet 재활용 절감"],["섬유류 (TEXTILE)","3.17","원면·합성섬유 제조 대비 재활용 절감"],["음식물 (FOOD)","0.58","매립 메탄 회피 + 퇴비화/혐기 처리"],["목재류 (WOOD)","1.76","원목 가공 대비 재활용 에너지 절감"],["기타 (OTHER)","1.80","가중 평균값"]];
+  const ftbl=[["종이자원 (PAPER_RESOURCE)","2.86","원목 펄프 제조 대비 재생펄프 에너지 절감 (폐지·골판지·신문지 포함)"],["비닐 (VINYL)","1.53","PE/PP 석유 기반 원료 대체 + 소각 회피 효과"],["생활폐기물 (GENERAL_WASTE)","0.58","매립 메탄 회피 + 소각 에너지 회수 가중 평균"]];
   ftbl.forEach(r=>{html+='<tr><td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">'+r[0]+'</td><td style="padding:5px 8px;text-align:right;border-bottom:1px solid #e5e7eb;font-weight:800;color:#15803d">'+r[1]+' kgCO₂e/kg</td><td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;color:#6b7280">'+r[2]+'</td></tr>';});
   html+='</tbody></table></div>';
   // Net
@@ -2091,7 +2082,7 @@ async function loadWasteTypes(){
   if(!data.length){b.innerHTML=emptyRow(6);return}
   b.innerHTML=data.map(r=>'<tr><td class="mono">'+r.TYPE_CODE+'</td><td style="font-weight:600">'+r.TYPE_NAME+'</td><td>'+(r.DESCRIPTION||'-')+'</td><td>'+(r.UNIT||'kg')+'</td><td>'+activeBadge(r.ACTIVE_YN)+'</td><td><button class="btn btn-sm btn-outline" onclick="editWT('+r.TYPE_ID+')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-red" onclick="delWT('+r.TYPE_ID+',\\''+r.TYPE_NAME+'\\')"><i class="fas fa-trash"></i></button></td></tr>').join('');
 }
-function openAddWT(){openEditModal('신규 폐기물 종류 등록','fa-trash','#14b8a6',[{n:'TYPE_CODE',l:'코드 *',ph:'PLASTIC'},{n:'TYPE_NAME',l:'종류명 *',ph:'플라스틱'},{n:'DESCRIPTION',l:'설명',ph:'각종 플라스틱류'},{n:'UNIT',l:'단위',v:'kg'},{n:'ACTIVE_YN',l:'상태',type:'select',opts:[['Y','활성'],['N','비활성']]}],async d=>{const r=await adminPost('/waste-api/admin/waste-types',d);if(r.success){toast(r.message);closeEditModal();loadWasteTypes();loadLookups()}else toast(r.message,false)})}
+function openAddWT(){openEditModal('신규 폐기물 종류 등록','fa-trash','#14b8a6',[{n:'TYPE_CODE',l:'코드 *',ph:'VINYL'},{n:'TYPE_NAME',l:'종류명 *',ph:'비닐'},{n:'DESCRIPTION',l:'설명',ph:'PE/PP 비닐류'},{n:'UNIT',l:'단위',v:'kg'},{n:'ACTIVE_YN',l:'상태',type:'select',opts:[['Y','활성'],['N','비활성']]}],async d=>{const r=await adminPost('/waste-api/admin/waste-types',d);if(r.success){toast(r.message);closeEditModal();loadWasteTypes();loadLookups()}else toast(r.message,false)})}
 async function editWT(id){const d=await adminFetch('/waste-api/admin/waste-types/'+id);if(!d)return;openEditModal('폐기물 종류 수정','fa-trash','#14b8a6',[{n:'TYPE_CODE',l:'코드',v:d.TYPE_CODE,dis:true},{n:'TYPE_NAME',l:'종류명 *',v:d.TYPE_NAME},{n:'DESCRIPTION',l:'설명',v:d.DESCRIPTION},{n:'UNIT',l:'단위',v:d.UNIT},{n:'ACTIVE_YN',l:'상태',type:'select',opts:[['Y','활성'],['N','비활성']],v:d.ACTIVE_YN}],async data=>{const r=await adminPut('/waste-api/admin/waste-types/'+id,data);if(r.success){toast(r.message);closeEditModal();loadWasteTypes();loadLookups()}else toast(r.message,false)})}
 async function delWT(id,name){if(!confirm(name+' 종류를 삭제하시겠습니까?'))return;const r=await adminDel('/waste-api/admin/waste-types/'+id);if(r.success){toast(r.message);loadWasteTypes();loadLookups()}else toast(r.message,false)}
 
@@ -2127,7 +2118,7 @@ async function loadRecyclers(){
   if(!data.length){b.innerHTML=emptyRow(8);return}
   b.innerHTML=data.map(r=>'<tr><td class="mono">'+r.RECYCLER_CODE+'</td><td style="font-weight:600">'+r.RECYCLER_NAME+'</td><td>'+(r.ADDRESS||'-')+'</td><td>'+(r.CONTACT_NAME||'-')+'</td><td>'+(r.CONTACT_PHONE||'-')+'</td><td>'+(r.RECYCLING_TYPES||'-')+'</td><td>'+activeBadge(r.ACTIVE_YN)+'</td><td><button class="btn btn-sm btn-outline" onclick="editRecy('+r.RECYCLER_ID+')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-red" onclick="delRecy('+r.RECYCLER_ID+',\\''+r.RECYCLER_NAME+'\\')"><i class="fas fa-trash"></i></button></td></tr>').join('');
 }
-function openAddRecy(){openEditModal('신규 재활용 업체 등록','fa-recycle','#8b5cf6',[{n:'RECYCLER_CODE',l:'코드 *',ph:'RCY-004'},{n:'RECYCLER_NAME',l:'업체명 *',ph:'인천재활용'},{n:'ADDRESS',l:'주소'},{n:'CONTACT_NAME',l:'담당자'},{n:'CONTACT_PHONE',l:'연락처'},{n:'RECYCLING_TYPES',l:'처리 가능 종류',ph:'PAPER_WASTE,CARDBOARD'},{n:'REMARKS',l:'비고',type:'textarea'},{n:'ACTIVE_YN',l:'상태',type:'select',opts:[['Y','활성'],['N','비활성']]}],async d=>{const r=await adminPost('/waste-api/admin/recyclers',d);if(r.success){toast(r.message);closeEditModal();loadRecyclers();loadLookups()}else toast(r.message,false)})}
+function openAddRecy(){openEditModal('신규 재활용 업체 등록','fa-recycle','#8b5cf6',[{n:'RECYCLER_CODE',l:'코드 *',ph:'RCY-004'},{n:'RECYCLER_NAME',l:'업체명 *',ph:'인천재활용'},{n:'ADDRESS',l:'주소'},{n:'CONTACT_NAME',l:'담당자'},{n:'CONTACT_PHONE',l:'연락처'},{n:'RECYCLING_TYPES',l:'처리 가능 종류',ph:'PAPER_RESOURCE,VINYL'},{n:'REMARKS',l:'비고',type:'textarea'},{n:'ACTIVE_YN',l:'상태',type:'select',opts:[['Y','활성'],['N','비활성']]}],async d=>{const r=await adminPost('/waste-api/admin/recyclers',d);if(r.success){toast(r.message);closeEditModal();loadRecyclers();loadLookups()}else toast(r.message,false)})}
 async function editRecy(id){const d=await adminFetch('/waste-api/admin/recyclers/'+id);if(!d)return;openEditModal('재활용 업체 수정','fa-recycle','#8b5cf6',[{n:'RECYCLER_CODE',l:'코드',v:d.RECYCLER_CODE,dis:true},{n:'RECYCLER_NAME',l:'업체명 *',v:d.RECYCLER_NAME},{n:'ADDRESS',l:'주소',v:d.ADDRESS},{n:'CONTACT_NAME',l:'담당자',v:d.CONTACT_NAME},{n:'CONTACT_PHONE',l:'연락처',v:d.CONTACT_PHONE},{n:'RECYCLING_TYPES',l:'처리 가능 종류',v:d.RECYCLING_TYPES},{n:'REMARKS',l:'비고',v:d.REMARKS,type:'textarea'},{n:'ACTIVE_YN',l:'상태',type:'select',opts:[['Y','활성'],['N','비활성']],v:d.ACTIVE_YN}],async data=>{const r=await adminPut('/waste-api/admin/recyclers/'+id,data);if(r.success){toast(r.message);closeEditModal();loadRecyclers();loadLookups()}else toast(r.message,false)})}
 async function delRecy(id,name){if(!confirm(name+' 업체를 삭제하시겠습니까?'))return;const r=await adminDel('/waste-api/admin/recyclers/'+id);if(r.success){toast(r.message);loadRecyclers();loadLookups()}else toast(r.message,false)}
 
