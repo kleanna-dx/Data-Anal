@@ -421,6 +421,60 @@ app.get('/waste-api/dashboard', async (c) => {
   }))
 })
 
+// ===== API: 대시보드 세부사항 =====
+app.get('/waste-api/dashboard/detail', async (c) => {
+  const db = c.env.DB
+  const sd = c.req.query('startDate') || '2026-01-01'
+  const ed = c.req.query('endDate') || '2026-12-31'
+  const type = c.req.query('type') || 'discharge'
+
+  switch(type) {
+    case 'discharge': {
+      // 총 배출량 세부: 배출처별, 폐기물종류별, 일별 상세
+      const byCenter = await db.prepare(`SELECT CENTER_NAME as name, CENTER_CODE as code, COUNT(*) as cnt, COALESCE(SUM(WEIGHT_KG),0) as wt, MIN(DISCHARGE_DATE) as firstDate, MAX(DISCHARGE_DATE) as lastDate FROM MOD_WASTE_DISCHARGE WHERE DEL_YN='N' AND DISCHARGE_DATE>=? AND DISCHARGE_DATE<=? GROUP BY CENTER_NAME,CENTER_CODE ORDER BY wt DESC`).bind(sd, ed).all()
+      const byType = await db.prepare(`SELECT WASTE_TYPE as tp, COUNT(*) as cnt, COALESCE(SUM(WEIGHT_KG),0) as wt FROM MOD_WASTE_DISCHARGE WHERE DEL_YN='N' AND DISCHARGE_DATE>=? AND DISCHARGE_DATE<=? GROUP BY WASTE_TYPE ORDER BY wt DESC`).bind(sd, ed).all()
+      const daily = await db.prepare(`SELECT DISCHARGE_DATE as dt, COUNT(*) as cnt, COALESCE(SUM(WEIGHT_KG),0) as wt FROM MOD_WASTE_DISCHARGE WHERE DEL_YN='N' AND DISCHARGE_DATE>=? AND DISCHARGE_DATE<=? GROUP BY DISCHARGE_DATE ORDER BY dt`).bind(sd, ed).all()
+      const recent = await db.prepare(`SELECT d.DISCHARGE_ID,d.DISCHARGE_DATE,d.CENTER_NAME,d.WEIGHT_KG,d.WASTE_TYPE,d.DISCHARGE_MANAGER,t.TRACKING_NO FROM MOD_WASTE_DISCHARGE d JOIN MOD_WASTE_TRACKING t ON d.TRACKING_ID=t.TRACKING_ID WHERE d.DEL_YN='N' AND d.DISCHARGE_DATE>=? AND d.DISCHARGE_DATE<=? ORDER BY d.DISCHARGE_DATE DESC LIMIT 20`).bind(sd, ed).all()
+      return c.json(ok({ byCenter: byCenter.results, byType: byType.results, daily: daily.results, recent: recent.results }))
+    }
+    case 'tracking': {
+      // 트래킹 건수 세부: 상태별, 단계별, 일별 등록
+      const byStage = await db.prepare(`SELECT CURRENT_STAGE as stage, COUNT(*) as cnt FROM MOD_WASTE_TRACKING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY CURRENT_STAGE`).bind(sd, ed + ' 23:59:59').all()
+      const byStatus = await db.prepare(`SELECT STATUS as st, COUNT(*) as cnt FROM MOD_WASTE_TRACKING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY STATUS`).bind(sd, ed + ' 23:59:59').all()
+      const byWaste = await db.prepare(`SELECT WASTE_TYPE as tp, COUNT(*) as cnt, COALESCE(SUM(TOTAL_WEIGHT_KG),0) as wt FROM MOD_WASTE_TRACKING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY WASTE_TYPE ORDER BY cnt DESC`).bind(sd, ed + ' 23:59:59').all()
+      const recent = await db.prepare(`SELECT TRACKING_ID,TRACKING_NO,WASTE_TYPE,CURRENT_STAGE,STATUS,SOURCE_NAME,TOTAL_WEIGHT_KG,CREATED_AT FROM MOD_WASTE_TRACKING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? ORDER BY CREATED_AT DESC LIMIT 20`).bind(sd, ed + ' 23:59:59').all()
+      return c.json(ok({ byStage: byStage.results, byStatus: byStatus.results, byWaste: byWaste.results, recent: recent.results }))
+    }
+    case 'recycling': {
+      // 재활용률 세부: 업체별, 건별 상세
+      const byRecycler = await db.prepare(`SELECT RECYCLER_NAME as name, RECYCLER_CODE as code, COUNT(*) as cnt, COALESCE(AVG(RECYCLING_RATE),0) as avgRate, COALESCE(SUM(INPUT_WEIGHT_KG),0) as totalIn, COALESCE(SUM(OUTPUT_WEIGHT_KG),0) as totalOut, COALESCE(SUM(CO2_SAVING_KG),0) as co2Save FROM MOD_WASTE_RECYCLING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY RECYCLER_NAME,RECYCLER_CODE ORDER BY avgRate DESC`).bind(sd, ed + ' 23:59:59').all()
+      const byMethod = await db.prepare(`SELECT COALESCE(RECYCLING_METHOD,'미지정') as method, COUNT(*) as cnt, COALESCE(AVG(RECYCLING_RATE),0) as avgRate FROM MOD_WASTE_RECYCLING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY RECYCLING_METHOD`).bind(sd, ed + ' 23:59:59').all()
+      const recent = await db.prepare(`SELECT r.RECYCLING_ID,r.RECYCLER_NAME,r.INPUT_WEIGHT_KG,r.OUTPUT_WEIGHT_KG,r.RECYCLING_RATE,r.RECYCLING_METHOD,r.CO2_SAVING_KG,r.CREATED_AT,t.TRACKING_NO FROM MOD_WASTE_RECYCLING r JOIN MOD_WASTE_TRACKING t ON r.TRACKING_ID=t.TRACKING_ID WHERE r.DEL_YN='N' AND r.CREATED_AT>=? AND r.CREATED_AT<=? ORDER BY r.CREATED_AT DESC LIMIT 20`).bind(sd, ed + ' 23:59:59').all()
+      return c.json(ok({ byRecycler: byRecycler.results, byMethod: byMethod.results, recent: recent.results }))
+    }
+    case 'loss': {
+      // Loss율 세부: 업체별, 건별 상세
+      const byProcessor = await db.prepare(`SELECT PROCESSOR_NAME as name, PROCESSOR_CODE as code, COUNT(*) as cnt, COALESCE(AVG(LOSS_RATE),0) as avgLoss, COALESCE(SUM(INPUT_WEIGHT_KG),0) as totalIn, COALESCE(SUM(OUTPUT_WEIGHT_KG),0) as totalOut, COALESCE(SUM(LOSS_WEIGHT_KG),0) as totalLoss, COALESCE(AVG(COMPRESSION_DENSITY),0) as avgDensity FROM MOD_WASTE_COMPRESSION WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY PROCESSOR_NAME,PROCESSOR_CODE ORDER BY avgLoss ASC`).bind(sd, ed + ' 23:59:59').all()
+      const recent = await db.prepare(`SELECT c.COMPRESSION_ID,c.PROCESSOR_NAME,c.INPUT_WEIGHT_KG,c.OUTPUT_WEIGHT_KG,c.LOSS_WEIGHT_KG,c.LOSS_RATE,c.BALE_COUNT,c.COMPRESSION_DENSITY,c.CREATED_AT,t.TRACKING_NO FROM MOD_WASTE_COMPRESSION c JOIN MOD_WASTE_TRACKING t ON c.TRACKING_ID=t.TRACKING_ID WHERE c.DEL_YN='N' AND c.CREATED_AT>=? AND c.CREATED_AT<=? ORDER BY c.CREATED_AT DESC LIMIT 20`).bind(sd, ed + ' 23:59:59').all()
+      return c.json(ok({ byProcessor: byProcessor.results, recent: recent.results }))
+    }
+    case 'distance': {
+      // 이동거리 세부: 수거업체별, 건별 상세
+      const byCollector = await db.prepare(`SELECT COLLECTOR_NAME as name, COLLECTOR_CODE as code, COUNT(*) as cnt, COALESCE(SUM(DISTANCE_KM),0) as totalDist, COALESCE(AVG(DISTANCE_KM),0) as avgDist, COALESCE(SUM(COLLECTED_WEIGHT_KG),0) as totalWt, COALESCE(SUM(CO2_EMISSION_KG),0) as totalCo2 FROM MOD_WASTE_COLLECTION WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY COLLECTOR_NAME,COLLECTOR_CODE ORDER BY totalDist DESC`).bind(sd, ed + ' 23:59:59').all()
+      const recent = await db.prepare(`SELECT c.COLLECTION_ID,c.COLLECTOR_NAME,c.VEHICLE_NO,c.COLLECTED_WEIGHT_KG,c.DISTANCE_KM,c.CO2_EMISSION_KG,c.ORIGIN_ADDRESS,c.DESTINATION_ADDRESS,c.CREATED_AT,t.TRACKING_NO FROM MOD_WASTE_COLLECTION c JOIN MOD_WASTE_TRACKING t ON c.TRACKING_ID=t.TRACKING_ID WHERE c.DEL_YN='N' AND c.CREATED_AT>=? AND c.CREATED_AT<=? ORDER BY c.CREATED_AT DESC LIMIT 20`).bind(sd, ed + ' 23:59:59').all()
+      return c.json(ok({ byCollector: byCollector.results, recent: recent.results }))
+    }
+    case 'co2': {
+      // CO2 절감 세부: 재활용 업체별 절감 + 수거 업체별 배출
+      const savings = await db.prepare(`SELECT RECYCLER_NAME as name, COUNT(*) as cnt, COALESCE(SUM(CO2_SAVING_KG),0) as co2Save, COALESCE(SUM(OUTPUT_WEIGHT_KG),0) as totalOut FROM MOD_WASTE_RECYCLING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY RECYCLER_NAME ORDER BY co2Save DESC`).bind(sd, ed + ' 23:59:59').all()
+      const emissions = await db.prepare(`SELECT COLLECTOR_NAME as name, COUNT(*) as cnt, COALESCE(SUM(CO2_EMISSION_KG),0) as co2Emit, COALESCE(SUM(DISTANCE_KM),0) as totalDist FROM MOD_WASTE_COLLECTION WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY COLLECTOR_NAME ORDER BY co2Emit DESC`).bind(sd, ed + ' 23:59:59').all()
+      return c.json(ok({ savings: savings.results, emissions: emissions.results }))
+    }
+    default:
+      return c.json(err('알 수 없는 타입입니다'), 400)
+  }
+})
+
 // ===== SPA HTML =====
 app.get('*', (c) => {
   return c.html(renderHTML())
@@ -637,6 +691,40 @@ tbody tr:hover{background:#f0fdf4}
 /* ACTIVE/INACTIVE BADGE */
 .active-y{color:#059669;font-weight:700}.active-n{color:#ef4444;font-weight:700}
 
+/* KPI CLICKABLE */
+.kpi-click{cursor:pointer;position:relative}
+.kpi-click::after{content:'';position:absolute;inset:0;border-radius:var(--r);border:2px solid transparent;transition:border-color .2s}
+.kpi-click:hover::after{border-color:var(--c-primary)}
+.kpi-click.selected{box-shadow:0 0 0 3px rgba(5,150,105,.25)}
+.kpi-click.selected::after{border-color:var(--c-primary)}
+.kpi-hint{font-size:10px;color:var(--c-text3);margin-top:6px;opacity:0;transition:opacity .2s}
+.kpi-click:hover .kpi-hint{opacity:1}
+.kpi-click.selected .kpi-hint{opacity:1}
+.kpi-click.selected .kpi-hint i{transform:rotate(180deg)}
+
+/* KPI DETAIL PANEL */
+.kpi-detail-panel{background:var(--c-card);border-radius:var(--r);box-shadow:var(--shadow);margin-bottom:24px;border:1px solid var(--c-border);overflow:hidden;animation:slideDown .3s ease}
+@keyframes slideDown{from{opacity:0;max-height:0;margin-bottom:0}to{opacity:1;max-height:2000px;margin-bottom:24px}}
+.kpi-detail-header{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border-bottom:1px solid var(--c-border)}
+.kpi-detail-header h3{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;color:var(--c-text)}
+.kpi-detail-content{padding:24px}
+.kpi-detail-content .detail-tabs{display:flex;gap:4px;margin-bottom:20px;background:#f3f4f6;padding:4px;border-radius:10px;flex-wrap:wrap}
+.kpi-detail-content .detail-tab{padding:8px 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--c-text2);font-family:inherit;transition:all .2s}
+.kpi-detail-content .detail-tab.on{background:#fff;color:var(--c-primary);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.kpi-detail-content .detail-tab:hover:not(.on){background:rgba(0,0,0,.04)}
+.detail-sub{display:none;animation:fadeIn .25s ease}.detail-sub.show{display:block}
+.detail-summary-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px}
+.detail-summary-item{background:#f9fafb;border-radius:10px;padding:14px 16px;text-align:center;border:1px solid #f3f4f6}
+.detail-summary-item .ds-label{font-size:11px;color:var(--c-text2);font-weight:600;margin-bottom:4px}
+.detail-summary-item .ds-value{font-size:22px;font-weight:800;color:var(--c-text)}
+.detail-summary-item .ds-unit{font-size:11px;color:var(--c-text3)}
+.detail-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.detail-tbl th{background:#f9fafb;padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--c-text2);border-bottom:2px solid var(--c-border);text-transform:uppercase;letter-spacing:.3px}
+.detail-tbl td{padding:10px 12px;border-bottom:1px solid #f3f4f6}
+.detail-tbl tr:hover{background:#f0fdf4}
+.detail-tbl .num{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.detail-chart-wrap{position:relative;height:250px;margin-bottom:16px}
+
 /* Edit modal */
 .edit-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto;backdrop-filter:blur(4px)}
 .edit-modal.show{display:flex}
@@ -717,12 +805,20 @@ tbody tr:hover{background:#f0fdf4}
   </div>
   <div class="content">
     <div class="kpi-grid" id="kpiGrid">
-      <div class="kpi"><div class="kpi-icon" style="background:#d1fae5;color:#059669"><i class="fas fa-weight-hanging"></i></div><div class="kpi-label">총 배출량</div><div class="kpi-value" id="k-wt">-</div><div class="kpi-unit">kg</div></div>
-      <div class="kpi"><div class="kpi-icon" style="background:#dbeafe;color:#3b82f6"><i class="fas fa-clipboard-list"></i></div><div class="kpi-label">트래킹 건수</div><div class="kpi-value" id="k-cnt">-</div><div class="kpi-unit">건</div></div>
-      <div class="kpi"><div class="kpi-icon" style="background:#ccfbf1;color:#14b8a6"><i class="fas fa-recycle"></i></div><div class="kpi-label">평균 재활용률</div><div class="kpi-value" id="k-recycle">-</div><div class="kpi-unit">%</div></div>
-      <div class="kpi"><div class="kpi-icon" style="background:#fef3c7;color:#f59e0b"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-label">평균 Loss율</div><div class="kpi-value" id="k-loss">-</div><div class="kpi-unit">%</div></div>
-      <div class="kpi"><div class="kpi-icon" style="background:#ede9fe;color:#8b5cf6"><i class="fas fa-road"></i></div><div class="kpi-label">총 이동거리</div><div class="kpi-value" id="k-dist">-</div><div class="kpi-unit">km</div></div>
-      <div class="kpi"><div class="kpi-icon" style="background:#dcfce7;color:#22c55e"><i class="fas fa-leaf"></i></div><div class="kpi-label">CO2 절감</div><div class="kpi-value" id="k-co2">-</div><div class="kpi-unit">kg CO2</div></div>
+      <div class="kpi kpi-click" data-detail="discharge"><div class="kpi-icon" style="background:#d1fae5;color:#059669"><i class="fas fa-weight-hanging"></i></div><div class="kpi-label">총 배출량</div><div class="kpi-value" id="k-wt">-</div><div class="kpi-unit">kg</div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> 세부사항 보기</div></div>
+      <div class="kpi kpi-click" data-detail="tracking"><div class="kpi-icon" style="background:#dbeafe;color:#3b82f6"><i class="fas fa-clipboard-list"></i></div><div class="kpi-label">트래킹 건수</div><div class="kpi-value" id="k-cnt">-</div><div class="kpi-unit">건</div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> 세부사항 보기</div></div>
+      <div class="kpi kpi-click" data-detail="recycling"><div class="kpi-icon" style="background:#ccfbf1;color:#14b8a6"><i class="fas fa-recycle"></i></div><div class="kpi-label">평균 재활용률</div><div class="kpi-value" id="k-recycle">-</div><div class="kpi-unit">%</div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> 세부사항 보기</div></div>
+      <div class="kpi kpi-click" data-detail="loss"><div class="kpi-icon" style="background:#fef3c7;color:#f59e0b"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-label">평균 Loss율</div><div class="kpi-value" id="k-loss">-</div><div class="kpi-unit">%</div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> 세부사항 보기</div></div>
+      <div class="kpi kpi-click" data-detail="distance"><div class="kpi-icon" style="background:#ede9fe;color:#8b5cf6"><i class="fas fa-road"></i></div><div class="kpi-label">총 이동거리</div><div class="kpi-value" id="k-dist">-</div><div class="kpi-unit">km</div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> 세부사항 보기</div></div>
+      <div class="kpi kpi-click" data-detail="co2"><div class="kpi-icon" style="background:#dcfce7;color:#22c55e"><i class="fas fa-leaf"></i></div><div class="kpi-label">CO2 절감</div><div class="kpi-value" id="k-co2">-</div><div class="kpi-unit">kg CO2</div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> 세부사항 보기</div></div>
+    </div>
+    <!-- KPI Detail Panel -->
+    <div id="kpiDetailPanel" class="kpi-detail-panel" style="display:none">
+      <div class="kpi-detail-header">
+        <h3 id="kpiDetailTitle"><i class="fas fa-chart-bar"></i> 세부사항</h3>
+        <button class="btn btn-sm btn-outline" onclick="closeKpiDetail()"><i class="fas fa-times"></i> 닫기</button>
+      </div>
+      <div id="kpiDetailContent" class="kpi-detail-content"><div class="loading"><div class="spinner"></div> 데이터를 불러오는 중...</div></div>
     </div>
     <div class="chart-grid">
       <div class="chart-card"><h3><i class="fas fa-chart-bar" style="color:#10b981"></i>일별 배출 추이</h3><div style="position:relative;height:280px"><canvas id="chDaily"></canvas></div></div>
@@ -1249,6 +1345,324 @@ function renderDash(d){
   ch3=new Chart(document.getElementById('chType'),{type:'pie',data:{labels:wt.map(x=>W[x.tp]||x.tp),datasets:[{data:wt.map(x=>x.wt),backgroundColor:COLORS.slice(0,wt.length),borderWidth:3,borderColor:'#fff',hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{padding:16,font:{size:12}}}}}});
   const ct=d.centerStats||[];
   ch4=new Chart(document.getElementById('chCenter'),{type:'bar',data:{labels:ct.map(x=>x.name),datasets:[{label:'처리량(kg)',data:ct.map(x=>x.wt),backgroundColor:COLORS.map(c=>c+'cc'),borderColor:COLORS,borderWidth:1,borderRadius:6,barPercentage:.7}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,title:{display:true,text:'kg',font:{size:11}},grid:{color:'rgba(0,0,0,.04)'}},y:{grid:{display:false}}}}});
+}
+
+/* ===== KPI DETAIL DRILL-DOWN ===== */
+let currentKpiDetail=null;
+let detailChart1=null,detailChart2=null;
+
+function closeKpiDetail(){
+  document.getElementById('kpiDetailPanel').style.display='none';
+  document.querySelectorAll('.kpi-click').forEach(k=>k.classList.remove('selected'));
+  currentKpiDetail=null;
+  if(detailChart1){detailChart1.destroy();detailChart1=null}
+  if(detailChart2){detailChart2.destroy();detailChart2=null}
+}
+
+document.querySelectorAll('.kpi-click').forEach(kpi=>{
+  kpi.addEventListener('click',()=>{
+    const type=kpi.dataset.detail;
+    if(currentKpiDetail===type){closeKpiDetail();return}
+    document.querySelectorAll('.kpi-click').forEach(k=>k.classList.remove('selected'));
+    kpi.classList.add('selected');
+    currentKpiDetail=type;
+    loadKpiDetail(type);
+  });
+});
+
+async function loadKpiDetail(type){
+  const panel=document.getElementById('kpiDetailPanel');
+  const content=document.getElementById('kpiDetailContent');
+  const title=document.getElementById('kpiDetailTitle');
+  panel.style.display='block';
+  content.innerHTML='<div class="loading"><div class="spinner"></div> 데이터를 불러오는 중...</div>';
+  if(detailChart1){detailChart1.destroy();detailChart1=null}
+  if(detailChart2){detailChart2.destroy();detailChart2=null}
+
+  const titles={discharge:'총 배출량 세부사항',tracking:'트래킹 건수 세부사항',recycling:'재활용률 세부사항',loss:'Loss율 세부사항',distance:'이동거리 세부사항',co2:'CO2 절감/배출 세부사항'};
+  const icons={discharge:'fa-weight-hanging',tracking:'fa-clipboard-list',recycling:'fa-recycle',loss:'fa-exclamation-triangle',distance:'fa-road',co2:'fa-leaf'};
+  const colors={discharge:'#059669',tracking:'#3b82f6',recycling:'#14b8a6',loss:'#f59e0b',distance:'#8b5cf6',co2:'#22c55e'};
+  title.innerHTML='<i class="fas '+icons[type]+'" style="color:'+colors[type]+'"></i> '+(titles[type]||'세부사항');
+
+  const s=document.getElementById('sd').value,e=document.getElementById('ed').value;
+  try{
+    const r=await(await fetch('/waste-api/dashboard/detail?type='+type+'&startDate='+s+'&endDate='+e)).json();
+    if(r.success) renderKpiDetail(type,r.data);
+    else content.innerHTML='<div class="empty-state"><i class="fas fa-exclamation-circle"></i> '+r.message+'</div>';
+  }catch(ex){
+    content.innerHTML='<div class="empty-state"><i class="fas fa-exclamation-circle"></i> 데이터 로딩 실패</div>';
+  }
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function renderKpiDetail(type,data){
+  const el=document.getElementById('kpiDetailContent');
+  switch(type){
+    case 'discharge': return renderDischargeDetail(el,data);
+    case 'tracking': return renderTrackingDetail(el,data);
+    case 'recycling': return renderRecyclingDetail(el,data);
+    case 'loss': return renderLossDetail(el,data);
+    case 'distance': return renderDistanceDetail(el,data);
+    case 'co2': return renderCo2Detail(el,data);
+  }
+}
+
+/* --- Discharge Detail --- */
+function renderDischargeDetail(el,d){
+  const totalWt=d.byCenter.reduce((s,r)=>s+r.wt,0);
+  const totalCnt=d.byCenter.reduce((s,r)=>s+r.cnt,0);
+  let html='<div class="detail-tabs"><button class="detail-tab on" data-dt="d-summary">요약</button><button class="detail-tab" data-dt="d-center">배출처별</button><button class="detail-tab" data-dt="d-type">폐기물 종류별</button><button class="detail-tab" data-dt="d-recent">최근 기록</button></div>';
+
+  // Summary
+  html+='<div id="dt-d-summary" class="detail-sub show">';
+  html+='<div class="detail-summary-grid"><div class="detail-summary-item"><div class="ds-label">총 배출량</div><div class="ds-value">'+fmt(totalWt)+'</div><div class="ds-unit">kg</div></div><div class="detail-summary-item"><div class="ds-label">배출 건수</div><div class="ds-value">'+totalCnt+'</div><div class="ds-unit">건</div></div><div class="detail-summary-item"><div class="ds-label">배출처 수</div><div class="ds-value">'+d.byCenter.length+'</div><div class="ds-unit">곳</div></div><div class="detail-summary-item"><div class="ds-label">폐기물 종류</div><div class="ds-value">'+d.byType.length+'</div><div class="ds-unit">종</div></div></div>';
+  html+='<div class="detail-chart-wrap"><canvas id="dtChDischarge"></canvas></div>';
+  html+='</div>';
+
+  // By Center
+  html+='<div id="dt-d-center" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>배출처</th><th>코드</th><th style="text-align:right">배출 건수</th><th style="text-align:right">총 배출량(kg)</th><th style="text-align:right">비중(%)</th><th>기간</th></tr></thead><tbody>';
+  d.byCenter.forEach(r=>{
+    const pct=totalWt>0?((r.wt/totalWt)*100).toFixed(1):'0';
+    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="mono">'+r.code+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.wt)+'</td><td class="num">'+pct+'%</td><td style="font-size:11px;color:var(--c-text2)">'+r.firstDate+' ~ '+r.lastDate+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+
+  // By Type
+  html+='<div id="dt-d-type" class="detail-sub">';
+  html+='<div class="detail-chart-wrap"><canvas id="dtChDisType"></canvas></div>';
+  html+='<table class="detail-tbl"><thead><tr><th>폐기물 종류</th><th style="text-align:right">건수</th><th style="text-align:right">총 중량(kg)</th><th style="text-align:right">비중(%)</th></tr></thead><tbody>';
+  d.byType.forEach(r=>{
+    const pct=totalWt>0?((r.wt/totalWt)*100).toFixed(1):'0';
+    html+='<tr><td style="font-weight:600">'+(W[r.tp]||r.tp)+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.wt)+'</td><td class="num">'+pct+'%</td></tr>';
+  });
+  html+='</tbody></table></div>';
+
+  // Recent
+  html+='<div id="dt-d-recent" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>트래킹번호</th><th>배출일</th><th>배출처</th><th>종류</th><th style="text-align:right">중량(kg)</th><th>담당자</th></tr></thead><tbody>';
+  if(d.recent.length){d.recent.forEach(r=>{html+='<tr><td class="mono">'+r.TRACKING_NO+'</td><td>'+r.DISCHARGE_DATE+'</td><td style="font-weight:600">'+r.CENTER_NAME+'</td><td>'+(W[r.WASTE_TYPE]||r.WASTE_TYPE)+'</td><td class="num">'+fmt(r.WEIGHT_KG)+'</td><td>'+(r.DISCHARGE_MANAGER||'-')+'</td></tr>'})}
+  else html+='<tr><td colspan="6" style="text-align:center;color:var(--c-text3);padding:20px">데이터 없음</td></tr>';
+  html+='</tbody></table></div>';
+
+  el.innerHTML=html;
+  bindDetailTabs(el);
+
+  // Charts
+  if(d.daily.length){
+    detailChart1=new Chart(document.getElementById('dtChDischarge'),{type:'bar',data:{labels:d.daily.map(x=>x.dt),datasets:[{label:'배출량(kg)',data:d.daily.map(x=>x.wt),backgroundColor:'rgba(5,150,105,.6)',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true},x:{grid:{display:false}}}}});
+  }
+}
+
+/* --- Tracking Detail --- */
+function renderTrackingDetail(el,d){
+  const totalCnt=d.byStage.reduce((s,r)=>s+r.cnt,0);
+  let html='<div class="detail-tabs"><button class="detail-tab on" data-dt="t-summary">요약</button><button class="detail-tab" data-dt="t-stage">단계별</button><button class="detail-tab" data-dt="t-recent">최근 기록</button></div>';
+
+  html+='<div id="dt-t-summary" class="detail-sub show">';
+  html+='<div class="detail-summary-grid">';
+  d.byStatus.forEach(r=>{
+    const sc=SC_MAP[r.st]||{t:r.st,c:'#374151'};
+    html+='<div class="detail-summary-item"><div class="ds-label">'+sc.t+'</div><div class="ds-value" style="color:'+sc.c+'">'+r.cnt+'</div><div class="ds-unit">건</div></div>';
+  });
+  html+='</div>';
+  html+='<div class="detail-chart-wrap"><canvas id="dtChTrkStage"></canvas></div>';
+  html+='</div>';
+
+  html+='<div id="dt-t-stage" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>단계</th><th style="text-align:right">건수</th><th style="text-align:right">비중(%)</th><th>진행 바</th></tr></thead><tbody>';
+  d.byStage.forEach(r=>{
+    const pct=totalCnt>0?((r.cnt/totalCnt)*100).toFixed(1):'0';
+    html+='<tr><td style="font-weight:600"><i class="fas '+(SI[r.stage]||'fa-circle')+'" style="color:'+COLORS[SO[r.stage]-1||0]+';margin-right:6px"></i>'+(SL[r.stage]||r.stage)+'</td><td class="num">'+r.cnt+'</td><td class="num">'+pct+'%</td><td><div style="background:#f3f4f6;border-radius:4px;height:20px;width:100%;max-width:200px;overflow:hidden"><div style="background:'+COLORS[SO[r.stage]-1||0]+';height:100%;width:'+pct+'%;border-radius:4px;transition:width .5s"></div></div></td></tr>';
+  });
+  html+='</tbody></table>';
+  if(d.byWaste.length){
+    html+='<h4 style="margin-top:20px;font-size:14px;font-weight:700"><i class="fas fa-trash" style="color:#14b8a6;margin-right:6px"></i>폐기물 종류별</h4>';
+    html+='<table class="detail-tbl" style="margin-top:8px"><thead><tr><th>종류</th><th style="text-align:right">건수</th><th style="text-align:right">총 중량(kg)</th></tr></thead><tbody>';
+    d.byWaste.forEach(r=>{html+='<tr><td style="font-weight:600">'+(W[r.tp]||r.tp)+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.wt)+'</td></tr>'});
+    html+='</tbody></table>';
+  }
+  html+='</div>';
+
+  html+='<div id="dt-t-recent" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>ID</th><th>트래킹번호</th><th>종류</th><th>배출처</th><th style="text-align:right">중량(kg)</th><th>단계</th><th>상태</th></tr></thead><tbody>';
+  d.recent.forEach(r=>{
+    const sc=SC_MAP[r.STATUS]||{bg:'#f3f4f6',c:'#374151',t:r.STATUS};
+    html+='<tr><td>'+r.TRACKING_ID+'</td><td class="mono">'+r.TRACKING_NO+'</td><td>'+(W[r.WASTE_TYPE]||r.WASTE_TYPE)+'</td><td>'+r.SOURCE_NAME+'</td><td class="num">'+fmt(r.TOTAL_WEIGHT_KG)+'</td><td>'+(SL[r.CURRENT_STAGE]||r.CURRENT_STAGE)+'</td><td><span class="badge" style="background:'+sc.bg+';color:'+sc.c+'">'+sc.t+'</span></td></tr>';
+  });
+  html+='</tbody></table></div>';
+
+  el.innerHTML=html;
+  bindDetailTabs(el);
+
+  if(d.byStage.length){
+    detailChart1=new Chart(document.getElementById('dtChTrkStage'),{type:'doughnut',data:{labels:d.byStage.map(x=>SL[x.stage]||x.stage),datasets:[{data:d.byStage.map(x=>x.cnt),backgroundColor:d.byStage.map((x,i)=>COLORS[SO[x.stage]-1||i]),borderWidth:3,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},cutout:'55%'}});
+  }
+}
+
+/* --- Recycling Detail --- */
+function renderRecyclingDetail(el,d){
+  const totalIn=d.byRecycler.reduce((s,r)=>s+r.totalIn,0);
+  const totalOut=d.byRecycler.reduce((s,r)=>s+r.totalOut,0);
+  const overallRate=totalIn>0?((totalOut/totalIn)*100).toFixed(1):'0';
+  let html='<div class="detail-tabs"><button class="detail-tab on" data-dt="r-summary">요약</button><button class="detail-tab" data-dt="r-recycler">업체별</button><button class="detail-tab" data-dt="r-recent">상세 기록</button></div>';
+
+  html+='<div id="dt-r-summary" class="detail-sub show">';
+  html+='<div class="detail-summary-grid"><div class="detail-summary-item"><div class="ds-label">전체 재활용률</div><div class="ds-value" style="color:#14b8a6">'+overallRate+'</div><div class="ds-unit">%</div></div><div class="detail-summary-item"><div class="ds-label">총 투입량</div><div class="ds-value">'+fmt(totalIn)+'</div><div class="ds-unit">kg</div></div><div class="detail-summary-item"><div class="ds-label">총 산출량</div><div class="ds-value">'+fmt(totalOut)+'</div><div class="ds-unit">kg</div></div><div class="detail-summary-item"><div class="ds-label">재활용 업체 수</div><div class="ds-value">'+d.byRecycler.length+'</div><div class="ds-unit">곳</div></div></div>';
+  html+='<div class="detail-chart-wrap"><canvas id="dtChRecycler"></canvas></div>';
+  html+='</div>';
+
+  html+='<div id="dt-r-recycler" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>업체명</th><th style="text-align:right">처리 건수</th><th style="text-align:right">투입(kg)</th><th style="text-align:right">산출(kg)</th><th style="text-align:right">재활용률(%)</th><th style="text-align:right">CO2 절감(kg)</th></tr></thead><tbody>';
+  d.byRecycler.forEach(r=>{
+    const rateColor=r.avgRate>=90?'#059669':r.avgRate>=70?'#f59e0b':'#ef4444';
+    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.totalIn)+'</td><td class="num">'+fmt(r.totalOut)+'</td><td class="num" style="color:'+rateColor+';font-weight:800">'+r.avgRate.toFixed(1)+'%</td><td class="num">'+fmt(r.co2Save)+'</td></tr>';
+  });
+  html+='</tbody></table>';
+  if(d.byMethod.length){
+    html+='<h4 style="margin-top:20px;font-size:14px;font-weight:700"><i class="fas fa-cogs" style="color:#8b5cf6;margin-right:6px"></i>재활용 방법별</h4>';
+    html+='<table class="detail-tbl" style="margin-top:8px"><thead><tr><th>방법</th><th style="text-align:right">건수</th><th style="text-align:right">평균 재활용률(%)</th></tr></thead><tbody>';
+    d.byMethod.forEach(r=>{html+='<tr><td style="font-weight:600">'+r.method+'</td><td class="num">'+r.cnt+'</td><td class="num">'+r.avgRate.toFixed(1)+'%</td></tr>'});
+    html+='</tbody></table>';
+  }
+  html+='</div>';
+
+  html+='<div id="dt-r-recent" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>트래킹번호</th><th>업체명</th><th style="text-align:right">투입(kg)</th><th style="text-align:right">산출(kg)</th><th style="text-align:right">재활용률</th><th>방법</th><th style="text-align:right">CO2절감(kg)</th></tr></thead><tbody>';
+  d.recent.forEach(r=>{
+    const rateColor=r.RECYCLING_RATE>=90?'#059669':r.RECYCLING_RATE>=70?'#f59e0b':'#ef4444';
+    html+='<tr><td class="mono">'+r.TRACKING_NO+'</td><td style="font-weight:600">'+r.RECYCLER_NAME+'</td><td class="num">'+fmt(r.INPUT_WEIGHT_KG)+'</td><td class="num">'+fmt(r.OUTPUT_WEIGHT_KG)+'</td><td class="num" style="color:'+rateColor+';font-weight:800">'+(r.RECYCLING_RATE||0)+'%</td><td>'+(r.RECYCLING_METHOD||'-')+'</td><td class="num">'+fmt(r.CO2_SAVING_KG)+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+
+  el.innerHTML=html;
+  bindDetailTabs(el);
+
+  if(d.byRecycler.length){
+    detailChart1=new Chart(document.getElementById('dtChRecycler'),{type:'bar',data:{labels:d.byRecycler.map(r=>r.name),datasets:[{label:'투입량(kg)',data:d.byRecycler.map(r=>r.totalIn),backgroundColor:'rgba(20,184,166,.4)',borderColor:'#14b8a6',borderWidth:1,borderRadius:4},{label:'산출량(kg)',data:d.byRecycler.map(r=>r.totalOut),backgroundColor:'rgba(5,150,105,.6)',borderColor:'#059669',borderWidth:1,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{beginAtZero:true},x:{grid:{display:false}}}}});
+  }
+}
+
+/* --- Loss Detail --- */
+function renderLossDetail(el,d){
+  const totalIn=d.byProcessor.reduce((s,r)=>s+r.totalIn,0);
+  const totalLoss=d.byProcessor.reduce((s,r)=>s+r.totalLoss,0);
+  const overallLoss=totalIn>0?((totalLoss/totalIn)*100).toFixed(1):'0';
+  let html='<div class="detail-tabs"><button class="detail-tab on" data-dt="l-summary">요약</button><button class="detail-tab" data-dt="l-processor">업체별</button><button class="detail-tab" data-dt="l-recent">상세 기록</button></div>';
+
+  html+='<div id="dt-l-summary" class="detail-sub show">';
+  html+='<div class="detail-summary-grid"><div class="detail-summary-item"><div class="ds-label">전체 Loss율</div><div class="ds-value" style="color:#f59e0b">'+overallLoss+'</div><div class="ds-unit">%</div></div><div class="detail-summary-item"><div class="ds-label">총 투입량</div><div class="ds-value">'+fmt(totalIn)+'</div><div class="ds-unit">kg</div></div><div class="detail-summary-item"><div class="ds-label">총 손실량</div><div class="ds-value" style="color:#ef4444">'+fmt(totalLoss)+'</div><div class="ds-unit">kg</div></div><div class="detail-summary-item"><div class="ds-label">압축 업체 수</div><div class="ds-value">'+d.byProcessor.length+'</div><div class="ds-unit">곳</div></div></div>';
+  html+='<div class="detail-chart-wrap"><canvas id="dtChProcessor"></canvas></div>';
+  html+='</div>';
+
+  html+='<div id="dt-l-processor" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>업체명</th><th style="text-align:right">처리 건수</th><th style="text-align:right">투입(kg)</th><th style="text-align:right">산출(kg)</th><th style="text-align:right">손실(kg)</th><th style="text-align:right">Loss율(%)</th><th style="text-align:right">평균 밀도</th></tr></thead><tbody>';
+  d.byProcessor.forEach(r=>{
+    const lossColor=r.avgLoss<=3?'#059669':r.avgLoss<=5?'#f59e0b':'#ef4444';
+    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.totalIn)+'</td><td class="num">'+fmt(r.totalOut)+'</td><td class="num" style="color:#ef4444">'+fmt(r.totalLoss)+'</td><td class="num" style="color:'+lossColor+';font-weight:800">'+r.avgLoss.toFixed(1)+'%</td><td class="num">'+(r.avgDensity?r.avgDensity.toFixed(0):'-')+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+
+  html+='<div id="dt-l-recent" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>트래킹번호</th><th>업체명</th><th style="text-align:right">투입(kg)</th><th style="text-align:right">산출(kg)</th><th style="text-align:right">손실(kg)</th><th style="text-align:right">Loss율</th><th style="text-align:right">베일수</th></tr></thead><tbody>';
+  d.recent.forEach(r=>{
+    const lossColor=(r.LOSS_RATE||0)<=3?'#059669':(r.LOSS_RATE||0)<=5?'#f59e0b':'#ef4444';
+    html+='<tr><td class="mono">'+r.TRACKING_NO+'</td><td style="font-weight:600">'+r.PROCESSOR_NAME+'</td><td class="num">'+fmt(r.INPUT_WEIGHT_KG)+'</td><td class="num">'+fmt(r.OUTPUT_WEIGHT_KG)+'</td><td class="num" style="color:#ef4444">'+fmt(r.LOSS_WEIGHT_KG)+'</td><td class="num" style="color:'+lossColor+';font-weight:800">'+(r.LOSS_RATE||0)+'%</td><td class="num">'+(r.BALE_COUNT||'-')+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+
+  el.innerHTML=html;
+  bindDetailTabs(el);
+
+  if(d.byProcessor.length){
+    detailChart1=new Chart(document.getElementById('dtChProcessor'),{type:'bar',data:{labels:d.byProcessor.map(r=>r.name),datasets:[{label:'투입량(kg)',data:d.byProcessor.map(r=>r.totalIn),backgroundColor:'rgba(245,158,11,.4)',borderColor:'#f59e0b',borderWidth:1,borderRadius:4},{label:'손실량(kg)',data:d.byProcessor.map(r=>r.totalLoss),backgroundColor:'rgba(239,68,68,.6)',borderColor:'#ef4444',borderWidth:1,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{beginAtZero:true},x:{grid:{display:false}}}}});
+  }
+}
+
+/* --- Distance Detail --- */
+function renderDistanceDetail(el,d){
+  const totalDist=d.byCollector.reduce((s,r)=>s+r.totalDist,0);
+  const totalCo2=d.byCollector.reduce((s,r)=>s+r.totalCo2,0);
+  let html='<div class="detail-tabs"><button class="detail-tab on" data-dt="di-summary">요약</button><button class="detail-tab" data-dt="di-collector">업체별</button><button class="detail-tab" data-dt="di-recent">운송 기록</button></div>';
+
+  html+='<div id="dt-di-summary" class="detail-sub show">';
+  html+='<div class="detail-summary-grid"><div class="detail-summary-item"><div class="ds-label">총 이동거리</div><div class="ds-value" style="color:#8b5cf6">'+fmt(totalDist)+'</div><div class="ds-unit">km</div></div><div class="detail-summary-item"><div class="ds-label">총 운송 CO2 배출</div><div class="ds-value" style="color:#ef4444">'+fmt(totalCo2)+'</div><div class="ds-unit">kg CO2</div></div><div class="detail-summary-item"><div class="ds-label">수거 업체 수</div><div class="ds-value">'+d.byCollector.length+'</div><div class="ds-unit">곳</div></div><div class="detail-summary-item"><div class="ds-label">평균 거리/건</div><div class="ds-value">'+(d.byCollector.length?fmt(totalDist/d.byCollector.reduce((s,r)=>s+r.cnt,0)):0)+'</div><div class="ds-unit">km</div></div></div>';
+  html+='<div class="detail-chart-wrap"><canvas id="dtChCollDist"></canvas></div>';
+  html+='</div>';
+
+  html+='<div id="dt-di-collector" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>업체명</th><th style="text-align:right">수거 건수</th><th style="text-align:right">총 거리(km)</th><th style="text-align:right">평균 거리(km)</th><th style="text-align:right">총 수거량(kg)</th><th style="text-align:right">CO2 배출(kg)</th></tr></thead><tbody>';
+  d.byCollector.forEach(r=>{
+    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.totalDist)+'</td><td class="num">'+r.avgDist.toFixed(1)+'</td><td class="num">'+fmt(r.totalWt)+'</td><td class="num" style="color:#ef4444">'+fmt(r.totalCo2)+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+
+  html+='<div id="dt-di-recent" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>트래킹번호</th><th>업체명</th><th>차량</th><th>출발지</th><th>도착지</th><th style="text-align:right">거리(km)</th><th style="text-align:right">CO2(kg)</th></tr></thead><tbody>';
+  d.recent.forEach(r=>{
+    html+='<tr><td class="mono">'+r.TRACKING_NO+'</td><td style="font-weight:600">'+r.COLLECTOR_NAME+'</td><td>'+(r.VEHICLE_NO||'-')+'</td><td>'+(r.ORIGIN_ADDRESS||'-')+'</td><td>'+(r.DESTINATION_ADDRESS||'-')+'</td><td class="num">'+fmt(r.DISTANCE_KM)+'</td><td class="num" style="color:#ef4444">'+fmt(r.CO2_EMISSION_KG)+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+
+  el.innerHTML=html;
+  bindDetailTabs(el);
+
+  if(d.byCollector.length){
+    detailChart1=new Chart(document.getElementById('dtChCollDist'),{type:'bar',data:{labels:d.byCollector.map(r=>r.name),datasets:[{label:'총 거리(km)',data:d.byCollector.map(r=>r.totalDist),backgroundColor:'rgba(139,92,246,.5)',borderColor:'#8b5cf6',borderWidth:1,borderRadius:4,yAxisID:'y'},{label:'CO2 배출(kg)',data:d.byCollector.map(r=>r.totalCo2),type:'line',borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.1)',yAxisID:'y1',tension:.4,pointRadius:5,pointBackgroundColor:'#ef4444',fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{beginAtZero:true,title:{display:true,text:'km'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'kg CO2'}},x:{grid:{display:false}}}}});
+  }
+}
+
+/* --- CO2 Detail --- */
+function renderCo2Detail(el,d){
+  const totalSave=d.savings.reduce((s,r)=>s+r.co2Save,0);
+  const totalEmit=d.emissions.reduce((s,r)=>s+r.co2Emit,0);
+  const net=totalSave-totalEmit;
+  let html='<div class="detail-tabs"><button class="detail-tab on" data-dt="c-summary">요약</button><button class="detail-tab" data-dt="c-save">CO2 절감 (재활용)</button><button class="detail-tab" data-dt="c-emit">CO2 배출 (운송)</button></div>';
+
+  html+='<div id="dt-c-summary" class="detail-sub show">';
+  html+='<div class="detail-summary-grid"><div class="detail-summary-item" style="border:2px solid #dcfce7"><div class="ds-label" style="color:#16a34a">총 CO2 절감</div><div class="ds-value" style="color:#15803d">'+fmt(totalSave)+'</div><div class="ds-unit">kg CO2</div></div><div class="detail-summary-item" style="border:2px solid #fecaca"><div class="ds-label" style="color:#dc2626">총 CO2 배출</div><div class="ds-value" style="color:#b91c1c">'+fmt(totalEmit)+'</div><div class="ds-unit">kg CO2</div></div><div class="detail-summary-item" style="border:2px solid '+(net>=0?'#dbeafe':'#fecaca')+'"><div class="ds-label" style="color:'+(net>=0?'#2563eb':'#dc2626')+'">순 CO2 절감</div><div class="ds-value" style="color:'+(net>=0?'#1d4ed8':'#b91c1c')+'">'+fmt(net)+'</div><div class="ds-unit">kg CO2</div></div></div>';
+  html+='<div class="detail-chart-wrap"><canvas id="dtChCo2"></canvas></div>';
+  html+='</div>';
+
+  html+='<div id="dt-c-save" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>재활용 업체</th><th style="text-align:right">처리 건수</th><th style="text-align:right">산출량(kg)</th><th style="text-align:right">CO2 절감(kg)</th><th style="text-align:right">비중(%)</th></tr></thead><tbody>';
+  d.savings.forEach(r=>{
+    const pct=totalSave>0?((r.co2Save/totalSave)*100).toFixed(1):'0';
+    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.totalOut)+'</td><td class="num" style="color:#15803d;font-weight:800">'+fmt(r.co2Save)+'</td><td class="num">'+pct+'%</td></tr>';
+  });
+  html+='</tbody></table></div>';
+
+  html+='<div id="dt-c-emit" class="detail-sub">';
+  html+='<table class="detail-tbl"><thead><tr><th>수거 업체</th><th style="text-align:right">수거 건수</th><th style="text-align:right">이동거리(km)</th><th style="text-align:right">CO2 배출(kg)</th><th style="text-align:right">비중(%)</th></tr></thead><tbody>';
+  d.emissions.forEach(r=>{
+    const pct=totalEmit>0?((r.co2Emit/totalEmit)*100).toFixed(1):'0';
+    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.totalDist)+'</td><td class="num" style="color:#b91c1c;font-weight:800">'+fmt(r.co2Emit)+'</td><td class="num">'+pct+'%</td></tr>';
+  });
+  html+='</tbody></table></div>';
+
+  el.innerHTML=html;
+  bindDetailTabs(el);
+
+  // Chart: savings vs emissions stacked
+  const allNames=[...new Set([...d.savings.map(r=>r.name),...d.emissions.map(r=>r.name)])];
+  if(allNames.length||totalSave||totalEmit){
+    detailChart1=new Chart(document.getElementById('dtChCo2'),{type:'bar',data:{labels:['CO2 절감 (재활용)','CO2 배출 (운송)','순 절감'],datasets:[{label:'kg CO2',data:[totalSave,totalEmit,net],backgroundColor:['rgba(34,197,94,.6)','rgba(239,68,68,.6)',net>=0?'rgba(59,130,246,.6)':'rgba(239,68,68,.4)'],borderColor:['#22c55e','#ef4444',net>=0?'#3b82f6':'#ef4444'],borderWidth:1,borderRadius:8,barPercentage:.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'kg CO2'}},x:{grid:{display:false}}}}});
+  }
+}
+
+/* --- Detail Tabs binding --- */
+function bindDetailTabs(container){
+  container.querySelectorAll('.detail-tab').forEach(tab=>{
+    tab.addEventListener('click',()=>{
+      container.querySelectorAll('.detail-sub').forEach(s=>s.classList.remove('show'));
+      container.querySelector('#dt-'+tab.dataset.dt).classList.add('show');
+      container.querySelectorAll('.detail-tab').forEach(t=>t.classList.remove('on'));
+      tab.classList.add('on');
+      // Recreate charts if needed on tab switch
+      if(detailChart1)detailChart1.resize();
+      if(detailChart2)detailChart2.resize();
+    });
+  });
 }
 
 /* ===== FORM SUBMIT ===== */
