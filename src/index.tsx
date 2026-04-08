@@ -58,6 +58,10 @@ app.post('/waste-api/auth/login', async (c) => {
   await db.prepare(`INSERT INTO MOD_WASTE_SESSION (USER_ID,TOKEN,EXPIRES_AT) VALUES (?,?,?)`).bind((user as any).USER_ID, token, expiresAt).run()
   return c.json(ok({
     token, userName: (user as any).USER_NAME, role: (user as any).ROLE, loginId: (user as any).LOGIN_ID,
+    staffType: (user as any).STAFF_TYPE || 'ADMIN',
+    companyCode: (user as any).COMPANY_CODE || null,
+    companyName: (user as any).COMPANY_NAME || null,
+    vehicleNo: (user as any).VEHICLE_NO || null,
     expiresAt
   }, '로그인 성공'))
 })
@@ -72,7 +76,11 @@ app.get('/waste-api/auth/me', async (c) => {
   const token = c.req.header('Authorization')?.replace('Bearer ', '')
   const user = await getSessionUser(c.env.DB, token || null)
   if (!user) return c.json(err('인증이 필요합니다'), 401)
-  return c.json(ok({ userName: user.USER_NAME, role: user.ROLE, loginId: user.LOGIN_ID }))
+  return c.json(ok({ userName: user.USER_NAME, role: user.ROLE, loginId: user.LOGIN_ID,
+    staffType: user.STAFF_TYPE || 'ADMIN', companyCode: user.COMPANY_CODE || null,
+    companyName: user.COMPANY_NAME || null, vehicleNo: user.VEHICLE_NO || null,
+    phone: user.PHONE || null, email: user.EMAIL || null
+  }))
 })
 
 // ===== ADMIN MIDDLEWARE =====
@@ -82,6 +90,14 @@ async function requireAdmin(c: any): Promise<Response | null> {
   if (!user) return c.json(err('인증이 필요합니다'), 401)
   if (user.ROLE !== 'ADMIN') return c.json(err('관리자 권한이 필요합니다'), 403)
   return null
+}
+
+// ===== AUTH MIDDLEWARE (for data input) =====
+async function requireAuth(c: any): Promise<any | null> {
+  const token = c.req.header('Authorization')?.replace('Bearer ', '')
+  const user = await getSessionUser(c.env.DB, token || null)
+  if (!user) return null
+  return user
 }
 
 // ===== GENERIC ADMIN CRUD =====
@@ -221,7 +237,7 @@ app.delete('/waste-api/admin/issues/:id', async (c) => {
 // ===== USER MANAGEMENT =====
 app.get('/waste-api/admin/users', async (c) => {
   const guard = await requireAdmin(c); if (guard) return guard
-  const rows = await c.env.DB.prepare(`SELECT USER_ID,LOGIN_ID,USER_NAME,ROLE,EMAIL,PHONE,ACTIVE_YN,CREATED_AT FROM MOD_WASTE_USER WHERE DEL_YN='N' ORDER BY CREATED_AT DESC`).all()
+  const rows = await c.env.DB.prepare(`SELECT USER_ID,LOGIN_ID,USER_NAME,ROLE,EMAIL,PHONE,ACTIVE_YN,STAFF_TYPE,COMPANY_CODE,COMPANY_NAME,VEHICLE_NO,STAFF_REMARKS,CREATED_AT FROM MOD_WASTE_USER WHERE DEL_YN='N' ORDER BY CREATED_AT DESC`).all()
   return c.json(ok(rows.results))
 })
 
@@ -233,8 +249,8 @@ app.post('/waste-api/admin/users', async (c) => {
   const dup = await db.prepare(`SELECT 1 FROM MOD_WASTE_USER WHERE LOGIN_ID=? AND DEL_YN='N'`).bind(body.LOGIN_ID).first()
   if (dup) return c.json(err('이미 존재하는 아이디입니다'), 409)
   const hash = await sha256(body.PASSWORD)
-  const r = await db.prepare(`INSERT INTO MOD_WASTE_USER (LOGIN_ID,PASSWORD_HASH,USER_NAME,ROLE,EMAIL,PHONE,ACTIVE_YN,CREATED_AT,DEL_YN) VALUES (?,?,?,?,?,?,?,?,?)`)
-    .bind(body.LOGIN_ID, hash, body.USER_NAME, body.ROLE||'USER', body.EMAIL||'', body.PHONE||'', 'Y', now(), 'N').run()
+  const r = await db.prepare(`INSERT INTO MOD_WASTE_USER (LOGIN_ID,PASSWORD_HASH,USER_NAME,ROLE,EMAIL,PHONE,ACTIVE_YN,STAFF_TYPE,COMPANY_CODE,COMPANY_NAME,VEHICLE_NO,STAFF_REMARKS,CREATED_AT,DEL_YN) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(body.LOGIN_ID, hash, body.USER_NAME, body.ROLE||'USER', body.EMAIL||'', body.PHONE||'', 'Y', body.STAFF_TYPE||'ADMIN', body.COMPANY_CODE||null, body.COMPANY_NAME||null, body.VEHICLE_NO||null, body.STAFF_REMARKS||null, now(), 'N').run()
   return c.json(ok({ id: r.meta?.last_row_id }, '사용자 등록 완료'), 201)
 })
 
@@ -250,6 +266,11 @@ app.put('/waste-api/admin/users/:id', async (c) => {
   if (body.PHONE !== undefined) { sets.push('PHONE=?'); vals.push(body.PHONE) }
   if (body.ACTIVE_YN) { sets.push('ACTIVE_YN=?'); vals.push(body.ACTIVE_YN) }
   if (body.PASSWORD) { sets.push('PASSWORD_HASH=?'); vals.push(await sha256(body.PASSWORD)) }
+  if (body.STAFF_TYPE !== undefined) { sets.push('STAFF_TYPE=?'); vals.push(body.STAFF_TYPE) }
+  if (body.COMPANY_CODE !== undefined) { sets.push('COMPANY_CODE=?'); vals.push(body.COMPANY_CODE||null) }
+  if (body.COMPANY_NAME !== undefined) { sets.push('COMPANY_NAME=?'); vals.push(body.COMPANY_NAME||null) }
+  if (body.VEHICLE_NO !== undefined) { sets.push('VEHICLE_NO=?'); vals.push(body.VEHICLE_NO||null) }
+  if (body.STAFF_REMARKS !== undefined) { sets.push('STAFF_REMARKS=?'); vals.push(body.STAFF_REMARKS||null) }
   sets.push('UPDATED_AT=?'); vals.push(now()); vals.push(id)
   await db.prepare(`UPDATE MOD_WASTE_USER SET ${sets.join(',')} WHERE USER_ID=? AND DEL_YN='N'`).bind(...vals).run()
   return c.json(ok(null, '사용자 수정 완료'))
@@ -289,19 +310,24 @@ app.get('/waste-api/lookup/producers', async (c) => {
 
 // ===== API: 1단계 배출 등록 =====
 app.post('/waste-api/tracking/discharge', async (c) => {
+  const user = await requireAuth(c)
+  if (!user) return c.json(err('데이터 입력을 위해 로그인이 필요합니다'), 401)
   const body = await c.req.json()
   const db = c.env.DB
   const no = await genTrackingNo(db)
+  const createdBy = user.USER_NAME + '(' + user.LOGIN_ID + ')'
   const r = await db.prepare(`INSERT INTO MOD_WASTE_TRACKING (TRACKING_NO,WASTE_TYPE,CURRENT_STAGE,STATUS,SOURCE_NAME,TOTAL_WEIGHT_KG,CREATED_BY,CREATED_AT,DEL_YN) VALUES (?,?,?,?,?,?,?,?,?)`)
-    .bind(no, body.wasteType, 'DISCHARGE', 'INITIATED', body.centerName, body.weightKg, body.dischargeManager||'system', now(), 'N').run()
+    .bind(no, body.wasteType, 'DISCHARGE', 'INITIATED', body.centerName, body.weightKg, createdBy, now(), 'N').run()
   const tid = r.meta?.last_row_id
   await db.prepare(`INSERT INTO MOD_WASTE_DISCHARGE (TRACKING_ID,DISCHARGE_DATE,CENTER_CODE,CENTER_NAME,DISCHARGE_MANAGER,WEIGHT_KG,WASTE_TYPE,REMARKS,CREATED_AT,DEL_YN) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-    .bind(tid, body.dischargeDate, body.centerCode, body.centerName, body.dischargeManager||'', body.weightKg, body.wasteType, body.remarks||'', now(), 'N').run()
+    .bind(tid, body.dischargeDate, body.centerCode, body.centerName, body.dischargeManager||user.USER_NAME, body.weightKg, body.wasteType, body.remarks||'', now(), 'N').run()
   return c.json(ok({ trackingId: tid, trackingNo: no }, '배출 등록 완료'), 201)
 })
 
 // ===== API: 2단계 수거 등록 =====
 app.post('/waste-api/tracking/collection', async (c) => {
+  const user = await requireAuth(c)
+  if (!user) return c.json(err('데이터 입력을 위해 로그인이 필요합니다'), 401)
   const body = await c.req.json()
   const db = c.env.DB
   const t = await db.prepare(`SELECT * FROM MOD_WASTE_TRACKING WHERE TRACKING_ID=? AND DEL_YN='N'`).bind(body.trackingId).first()
@@ -316,6 +342,8 @@ app.post('/waste-api/tracking/collection', async (c) => {
 
 // ===== API: 3단계 압축 등록 =====
 app.post('/waste-api/tracking/compression', async (c) => {
+  const user = await requireAuth(c)
+  if (!user) return c.json(err('데이터 입력을 위해 로그인이 필요합니다'), 401)
   const body = await c.req.json()
   const db = c.env.DB
   const t = await db.prepare(`SELECT * FROM MOD_WASTE_TRACKING WHERE TRACKING_ID=? AND DEL_YN='N'`).bind(body.trackingId).first()
@@ -334,6 +362,8 @@ app.post('/waste-api/tracking/compression', async (c) => {
 
 // ===== API: 4단계 재활용 등록 =====
 app.post('/waste-api/tracking/recycling', async (c) => {
+  const user = await requireAuth(c)
+  if (!user) return c.json(err('데이터 입력을 위해 로그인이 필요합니다'), 401)
   const body = await c.req.json()
   const db = c.env.DB
   const t = await db.prepare(`SELECT * FROM MOD_WASTE_TRACKING WHERE TRACKING_ID=? AND DEL_YN='N'`).bind(body.trackingId).first()
@@ -352,6 +382,8 @@ app.post('/waste-api/tracking/recycling', async (c) => {
 
 // ===== API: 5단계 생산 등록 =====
 app.post('/waste-api/tracking/production', async (c) => {
+  const user = await requireAuth(c)
+  if (!user) return c.json(err('데이터 입력을 위해 로그인이 필요합니다'), 401)
   const body = await c.req.json()
   const db = c.env.DB
   const t = await db.prepare(`SELECT * FROM MOD_WASTE_TRACKING WHERE TRACKING_ID=? AND DEL_YN='N'`).bind(body.trackingId).first()
@@ -735,7 +767,7 @@ tbody tr:hover{background:#f0fdf4}
   <nav>
     <div class="nav-section">운영</div>
     <a class="nav-item active" data-page="dashboard"><i class="fas fa-chart-pie"></i>대시보드</a>
-    <a class="nav-item" data-page="input"><i class="fas fa-edit"></i>데이터 입력</a>
+    <a class="nav-item" data-page="input"><i class="fas fa-edit"></i>데이터 입력 <i class="fas fa-user-lock" id="inputLockIcon" style="font-size:10px;margin-left:auto;color:#3b82f6"></i></a>
     <a class="nav-item" data-page="tracking"><i class="fas fa-route"></i>추적 조회</a>
     <div class="nav-section">관리자</div>
     <a class="nav-item" data-page="admin" id="adminNav"><i class="fas fa-cogs"></i>시스템 관리 <i class="fas fa-lock" id="adminLockIcon" style="font-size:10px;margin-left:auto;color:#f59e0b"></i></a>
@@ -761,7 +793,15 @@ tbody tr:hover{background:#f0fdf4}
       </div>
     </form>
     <div style="margin-top:16px;padding:12px;background:#f0fdf4;border-radius:8px;font-size:11px;color:#065f46">
-      <i class="fas fa-info-circle"></i> 테스트 계정: <b>admin</b> / <b>admin123</b>
+      <i class="fas fa-info-circle"></i> <b>테스트 계정</b><br>
+      <div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:10px">
+        <span>관리자: <b>admin / admin123</b></span>
+        <span>배출담당: <b>center01 / center01</b></span>
+        <span>수거기사: <b>driver01 / driver01</b></span>
+        <span>압축처리: <b>knt01 / knt01</b></span>
+        <span>재활용: <b>recycle01 / recycle01</b></span>
+        <span>생산담당: <b>produce01 / produce01</b></span>
+      </div>
     </div>
   </div>
 </div>
@@ -829,6 +869,22 @@ tbody tr:hover{background:#f0fdf4}
     </div>
   </div>
   <div class="content">
+    <!-- Staff Login Banner -->
+    <div id="staffBanner" style="display:none;margin-bottom:20px;padding:16px 20px;border-radius:12px;border:2px solid var(--c-primary);background:linear-gradient(135deg,#f0fdf4,#ecfdf5)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:42px;height:42px;border-radius:50%;background:var(--c-primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700" id="staffAvatar">-</div>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--c-text)" id="staffName">-</div>
+            <div style="font-size:12px;color:var(--c-text2)" id="staffInfo">-</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="staffBadge" class="badge" style="background:#d1fae5;color:#065f46;font-size:12px;padding:4px 14px">-</span>
+          <button class="btn btn-sm btn-outline" onclick="doLogout()" style="font-size:11px"><i class="fas fa-sign-out-alt"></i> 로그아웃</button>
+        </div>
+      </div>
+    </div>
     <div class="step-tabs">
       <button class="step-tab on" data-step="1"><i class="fas fa-truck-loading"></i> 1. 배출</button>
       <i class="fas fa-chevron-right step-arrow"></i>
@@ -1077,8 +1133,9 @@ tbody tr:hover{background:#f0fdf4}
     <!-- Users -->
     <div id="ap-users" class="admin-panel">
       <div class="card">
-        <div class="admin-toolbar"><h3><i class="fas fa-users" style="color:#059669"></i>사용자 관리<span class="admin-count" id="ausrCnt"></span></h3><button class="btn btn-primary btn-sm" onclick="openAddUser()"><i class="fas fa-plus"></i> 사용자 등록</button></div>
-        <div class="tbl-wrap"><table><thead><tr><th>ID</th><th>로그인 ID</th><th>이름</th><th>역할</th><th>이메일</th><th>연락처</th><th>상태</th><th>관리</th></tr></thead><tbody id="tbUsers"></tbody></table></div>
+        <div class="admin-toolbar"><h3><i class="fas fa-users" style="color:#059669"></i>사용자 / 담당자 관리<span class="admin-count" id="ausrCnt"></span></h3><button class="btn btn-primary btn-sm" onclick="openAddUser()"><i class="fas fa-plus"></i> 사용자 등록</button></div>
+        <div style="margin-bottom:12px;padding:10px 14px;background:#eff6ff;border-radius:8px;font-size:12px;color:#1e40af"><i class="fas fa-info-circle" style="margin-right:4px"></i> 담당자별 <b>담당 유형·소속 업체·차량번호</b>를 설정하면, 해당 담당자가 데이터 입력 시 관련 필드가 자동으로 채워지고 수정이 제한됩니다.</div>
+        <div class="tbl-wrap"><table><thead><tr><th>ID</th><th>로그인 ID</th><th>이름</th><th>역할</th><th>담당/소속</th><th>이메일</th><th>연락처</th><th>상태</th><th>관리</th></tr></thead><tbody id="tbUsers"></tbody></table></div>
       </div>
     </div>
   </div>
@@ -1104,22 +1161,36 @@ let authToken=localStorage.getItem('wms_token')||null;
 let authUser=JSON.parse(localStorage.getItem('wms_user')||'null');
 
 function isAdmin(){ return authUser && authUser.role==='ADMIN' }
+function isLoggedIn(){ return !!authToken && !!authUser }
 function authHeaders(){ return authToken?{'Authorization':'Bearer '+authToken,'Content-Type':'application/json'}:{'Content-Type':'application/json'} }
 
 function updateAuthUI(){
-  const show=isAdmin();
+  const admin=isAdmin();
+  const logged=isLoggedIn();
   const lockIcon=document.getElementById('adminLockIcon');
-  if(lockIcon) lockIcon.style.display=show?'none':'';
-  if(show){
+  if(lockIcon) lockIcon.style.display=admin?'none':'';
+  // Show user bar in admin page header
+  if(admin){
     document.getElementById('userBar').style.display='flex';
     document.getElementById('userName').textContent=authUser.userName;
     document.getElementById('userRole').textContent=authUser.role;
     document.getElementById('userAvatar').textContent=authUser.userName.charAt(0);
-    document.getElementById('sidebarUser').style.display='block';
-    document.getElementById('sidebarUser').innerHTML='<i class="fas fa-user-shield"></i> '+authUser.userName;
   } else {
     document.getElementById('userBar').style.display='none';
+  }
+  // Show user info in sidebar if logged in (any role)
+  if(logged){
+    document.getElementById('sidebarUser').style.display='block';
+    const STLABEL={ADMIN:'관리자',CENTER:'배출담당',COLLECTOR:'수거기사',PROCESSOR:'압축처리',RECYCLER:'재활용',PRODUCER:'생산담당'};
+    const stLabel=STLABEL[authUser.staffType]||authUser.staffType||'';
+    document.getElementById('sidebarUser').innerHTML='<i class="fas '+(admin?'fa-user-shield':'fa-user-tag')+'"></i> '+authUser.userName+(stLabel?' <span style="opacity:.7;font-size:10px">('+stLabel+')</span>':'');
+    // Update data input lock icon
+    const inputLock=document.getElementById('inputLockIcon');
+    if(inputLock) inputLock.style.display='none';
+  } else {
     document.getElementById('sidebarUser').style.display='none';
+    const inputLock=document.getElementById('inputLockIcon');
+    if(inputLock) inputLock.style.display='';
   }
 }
 
@@ -1149,8 +1220,20 @@ function activeBadge(v){ return v==='Y'?'<span class="active-y">활성</span>':'
 function emptyRow(colspan,text='데이터가 없습니다'){return '<tr><td colspan="'+colspan+'" class="empty-state"><i class="fas fa-inbox"></i>'+text+'</td></tr>'}
 
 /* ===== LOGIN =====*/
-function showLogin(){
-  document.getElementById('loginModal').classList.add('show');
+let loginIntent=null; // 'admin' or 'input' - where to go after login
+function showLogin(intent){
+  loginIntent=intent||null;
+  const modal=document.getElementById('loginModal');
+  const titleEl=modal.querySelector('h3');
+  const descEl=modal.querySelector('p');
+  if(intent==='input'){
+    titleEl.innerHTML='<i class="fas fa-user-tag" style="color:var(--c-primary)"></i> 담당자 로그인';
+    descEl.textContent='데이터 입력을 위해 담당자 인증이 필요합니다.';
+  } else {
+    titleEl.innerHTML='<i class="fas fa-lock" style="color:var(--c-primary)"></i> 관리자 로그인';
+    descEl.textContent='시스템 관리 기능은 관리자 인증이 필요합니다.';
+  }
+  modal.classList.add('show');
   document.getElementById('loginId').focus();
 }
 function closeLogin(){document.getElementById('loginModal').classList.remove('show')}
@@ -1165,14 +1248,17 @@ document.getElementById('loginForm').addEventListener('submit',async e=>{
     const r=await(await fetch('/waste-api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({loginId,password})})).json();
     if(r.success){
       authToken=r.data.token;
-      authUser={userName:r.data.userName,role:r.data.role,loginId:r.data.loginId};
+      authUser={userName:r.data.userName,role:r.data.role,loginId:r.data.loginId,staffType:r.data.staffType,companyCode:r.data.companyCode,companyName:r.data.companyName,vehicleNo:r.data.vehicleNo};
       localStorage.setItem('wms_token',authToken);
       localStorage.setItem('wms_user',JSON.stringify(authUser));
       closeLogin();
       updateAuthUI();
       toast('환영합니다, '+r.data.userName+'님!');
-      // navigate to admin
-      navTo('admin');
+      // Navigate based on intent
+      if(loginIntent==='admin' && r.data.role==='ADMIN') navTo('admin');
+      else if(loginIntent==='input'){ navTo('input'); applyStaffProfile(); }
+      else if(r.data.role==='ADMIN') navTo('admin');
+      else { navTo('input'); applyStaffProfile(); }
     }else{
       errEl.textContent=r.message;errEl.style.display='block';
     }
@@ -1198,6 +1284,7 @@ function navTo(page){
   if(page==='dashboard')loadDash();
   if(page==='tracking')loadList();
   if(page==='admin')loadAdminData();
+  if(page==='input')applyStaffProfile();
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('overlay').classList.remove('open');
 }
@@ -1205,7 +1292,8 @@ function navTo(page){
 document.querySelectorAll('.nav-item').forEach(el=>{
   el.addEventListener('click',()=>{
     const p=el.dataset.page;
-    if(p==='admin'&&!isAdmin()){showLogin();return}
+    if(p==='admin'&&!isAdmin()){showLogin('admin');return}
+    if(p==='input'&&!isLoggedIn()){showLogin('input');return}
     navTo(p);
   });
 });
@@ -1629,17 +1717,109 @@ function bindDetailTabs(container){
   });
 }
 
+/* ===== STAFF PROFILE AUTO-FILL ===== */
+const STAFF_LABEL={ADMIN:'관리자',CENTER:'배출 담당',COLLECTOR:'수거 기사',PROCESSOR:'압축 처리',RECYCLER:'재활용 담당',PRODUCER:'생산 담당'};
+const STAFF_COLOR2={ADMIN:'#059669',CENTER:'#10b981',COLLECTOR:'#3b82f6',PROCESSOR:'#f59e0b',RECYCLER:'#8b5cf6',PRODUCER:'#ef4444'};
+
+function applyStaffProfile(){
+  if(!isLoggedIn()){
+    const sb=document.getElementById('staffBanner');if(sb)sb.style.display='none';
+    return;
+  }
+  const u=authUser;
+  const banner=document.getElementById('staffBanner');
+  if(banner){
+    banner.style.display='block';
+    document.getElementById('staffAvatar').textContent=u.userName.charAt(0);
+    document.getElementById('staffAvatar').style.background=STAFF_COLOR2[u.staffType]||'var(--c-primary)';
+    document.getElementById('staffName').textContent=u.userName;
+    const parts=[STAFF_LABEL[u.staffType]||u.staffType];
+    if(u.companyName)parts.push(u.companyName);
+    if(u.vehicleNo)parts.push('차량: '+u.vehicleNo);
+    document.getElementById('staffInfo').textContent=parts.join(' | ');
+    document.getElementById('staffBadge').textContent=STAFF_LABEL[u.staffType]||u.staffType;
+    document.getElementById('staffBadge').style.background=(STAFF_COLOR2[u.staffType]||'#059669')+'22';
+    document.getElementById('staffBadge').style.color=STAFF_COLOR2[u.staffType]||'#065f46';
+  }
+  // Reset all locks first
+  resetFormLocks();
+  const st=u.staffType;
+  if(st==='CENTER'){
+    setSelectAndLock('selCenter',u.companyCode);
+    setValAndLock('inpCenterName',u.companyName);
+    setFormInputLock('f1','dischargeManager',u.userName);
+  }
+  if(st==='COLLECTOR'){
+    setSelectAndLock('selCollector',u.companyCode);
+    setValAndLock('inpColName',u.companyName);
+    setFormInputLock('f2','vehicleNo',u.vehicleNo||'');
+    setFormInputLock('f2','driverName',u.userName);
+  }
+  if(st==='PROCESSOR'){
+    setSelectAndLock('selProcessor',u.companyCode);
+    setValAndLock('inpProcName',u.companyName);
+  }
+  if(st==='RECYCLER'){
+    setSelectAndLock('selRecycler',u.companyCode);
+    setValAndLock('inpRecyName',u.companyName);
+  }
+  if(st==='PRODUCER'){
+    setSelectAndLock('selProducer',u.companyCode);
+    setValAndLock('inpProdName',u.companyName);
+  }
+}
+
+function setSelectAndLock(elId,val){
+  const el=document.getElementById(elId);if(!el||!val)return;
+  el.value=val;
+  el.dispatchEvent(new Event('change'));
+  el.disabled=true;
+  el.style.background='#f0fdf4';el.style.borderColor='#a7f3d0';
+  el.dataset.locked='true';
+}
+function setValAndLock(elId,val){
+  const el=document.getElementById(elId);if(!el)return;
+  el.value=val||'';el.readOnly=true;
+  el.style.background='#f0fdf4';el.style.borderColor='#a7f3d0';
+  el.dataset.locked='true';
+}
+function setFormInputLock(formId,name,val){
+  const f=document.getElementById(formId);if(!f)return;
+  const el=f.querySelector('[name="'+name+'"]');if(!el)return;
+  el.value=val||'';el.readOnly=true;
+  el.style.background='#f0fdf4';el.style.borderColor='#a7f3d0';
+  el.dataset.locked='true';
+}
+function resetFormLocks(){
+  document.querySelectorAll('[data-locked="true"]').forEach(el=>{
+    el.removeAttribute('data-locked');
+    el.style.background='';el.style.borderColor='';
+    if(el.tagName==='SELECT')el.disabled=false;
+    else el.readOnly=false;
+  });
+}
+
 /* ===== FORM SUBMIT ===== */
 const API={1:'/waste-api/tracking/discharge',2:'/waste-api/tracking/collection',3:'/waste-api/tracking/compression',4:'/waste-api/tracking/recycling',5:'/waste-api/tracking/production'};
 [1,2,3,4,5].forEach(n=>{
   document.getElementById('f'+n).addEventListener('submit',async e=>{
     e.preventDefault();
+    if(!isLoggedIn()){showLogin('input');return;}
     const btn=e.target.querySelector('button[type=submit]');
     const origText=btn.innerHTML;
     btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> 처리 중...';btn.disabled=true;
     try{
-      const r=await(await fetch(API[n],{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(fj(e.target))})).json();
-      if(r.success){toast(r.message+(r.data?.trackingNo?' ('+r.data.trackingNo+')':''));e.target.reset()}
+      // Temporarily enable disabled selects for FormData collection
+      const locked=e.target.querySelectorAll('select[disabled]');
+      locked.forEach(s=>s.disabled=false);
+      const payload=fj(e.target);
+      locked.forEach(s=>s.disabled=true);
+      const r=await(await fetch(API[n],{method:'POST',headers:authHeaders(),body:JSON.stringify(payload)})).json();
+      if(r.success){
+        toast(r.message+(r.data?.trackingNo?' ('+r.data.trackingNo+')':''));
+        e.target.reset();
+        applyStaffProfile();
+      }
       else{toast(r.message,false)}
     }catch(x){toast('오류: '+x.message,false)}
     finally{btn.innerHTML=origText;btn.disabled=false}
@@ -1830,14 +2010,48 @@ async function loadUsers(){
   const data=await adminFetch('/waste-api/admin/users');if(!data)return;
   document.getElementById('ausrCnt').textContent='('+data.length+'건)';
   const b=document.getElementById('tbUsers');
-  if(!data.length){b.innerHTML=emptyRow(8);return}
-  b.innerHTML=data.map(r=>'<tr><td>'+r.USER_ID+'</td><td class="mono">'+r.LOGIN_ID+'</td><td style="font-weight:600">'+r.USER_NAME+'</td><td><span class="badge" style="background:'+(r.ROLE==='ADMIN'?'#d1fae5;color:#065f46':'#dbeafe;color:#1d4ed8')+'">'+r.ROLE+'</span></td><td>'+(r.EMAIL||'-')+'</td><td>'+(r.PHONE||'-')+'</td><td>'+activeBadge(r.ACTIVE_YN)+'</td><td><button class="btn btn-sm btn-outline" onclick="editUser('+r.USER_ID+')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-red" onclick="delUser('+r.USER_ID+',\\''+r.LOGIN_ID+'\\')"><i class="fas fa-trash"></i></button></td></tr>').join('');
+  if(!data.length){b.innerHTML=emptyRow(9);return}
+  const STCOL2={ADMIN:'#059669',CENTER:'#10b981',COLLECTOR:'#3b82f6',PROCESSOR:'#f59e0b',RECYCLER:'#8b5cf6',PRODUCER:'#ef4444'};
+  const STLBL2={ADMIN:'관리자',CENTER:'배출담당',COLLECTOR:'수거기사',PROCESSOR:'압축처리',RECYCLER:'재활용',PRODUCER:'생산담당'};
+  b.innerHTML=data.map(r=>{
+    const stC=STCOL2[r.STAFF_TYPE]||'#6b7280',stL=STLBL2[r.STAFF_TYPE]||r.STAFF_TYPE||'-';
+    return '<tr><td>'+r.USER_ID+'</td><td class="mono">'+r.LOGIN_ID+'</td><td style="font-weight:600">'+r.USER_NAME+'</td><td><span class="badge" style="background:'+(r.ROLE==='ADMIN'?'#d1fae5;color:#065f46':'#dbeafe;color:#1d4ed8')+'">'+r.ROLE+'</span></td><td><span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600;background:'+stC+'18;color:'+stC+'">'+stL+'</span>'+(r.COMPANY_NAME?'<br><span style="font-size:10px;color:var(--c-text2)">'+r.COMPANY_NAME+(r.VEHICLE_NO?' | '+r.VEHICLE_NO:'')+'</span>':'')+'</td><td>'+(r.EMAIL||'-')+'</td><td>'+(r.PHONE||'-')+'</td><td>'+activeBadge(r.ACTIVE_YN)+'</td><td><button class="btn btn-sm btn-outline" onclick="editUser('+r.USER_ID+')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-red" onclick="delUser('+r.USER_ID+',\\''+r.LOGIN_ID+'\\')"><i class="fas fa-trash"></i></button></td></tr>'
+  }).join('');
 }
-function openAddUser(){openEditModal('사용자 등록','fa-users','#059669',[{n:'LOGIN_ID',l:'로그인 ID *',ph:'newuser'},{n:'PASSWORD',l:'비밀번호 *',ph:'비밀번호 입력',type:'password'},{n:'USER_NAME',l:'이름 *',ph:'홍길동'},{n:'ROLE',l:'역할',type:'select',opts:[['USER','일반 사용자'],['ADMIN','관리자']]},{n:'EMAIL',l:'이메일',ph:'user@company.com'},{n:'PHONE',l:'연락처',ph:'010-0000-0000'}],async d=>{const r=await adminPost('/waste-api/admin/users',d);if(r.success){toast(r.message);closeEditModal();loadUsers()}else toast(r.message,false)})}
+function openAddUser(){
+  const staffOpts=[['ADMIN','관리자'],['CENTER','배출 담당'],['COLLECTOR','수거 기사'],['PROCESSOR','압축 처리'],['RECYCLER','재활용 담당'],['PRODUCER','생산 담당']];
+  openEditModal('사용자 / 담당자 등록','fa-user-plus','#059669',[
+    {n:'LOGIN_ID',l:'로그인 ID *',ph:'driver02'},
+    {n:'PASSWORD',l:'비밀번호 *',ph:'비밀번호 입력',type:'password'},
+    {n:'USER_NAME',l:'이름 *',ph:'홍길동'},
+    {n:'ROLE',l:'역할',type:'select',opts:[['USER','일반 사용자'],['ADMIN','관리자']]},
+    {n:'STAFF_TYPE',l:'담당 유형 *',type:'select',opts:staffOpts},
+    {n:'COMPANY_CODE',l:'소속 코드',ph:'CTR-001, COL-001, KNT-001 등'},
+    {n:'COMPANY_NAME',l:'소속 명칭',ph:'서울 물류센터, (주)그린수거 등'},
+    {n:'VEHICLE_NO',l:'차량 번호 (수거기사)',ph:'12가3456'},
+    {n:'EMAIL',l:'이메일',ph:'user@company.com'},
+    {n:'PHONE',l:'연락처',ph:'010-0000-0000'},
+    {n:'STAFF_REMARKS',l:'비고',type:'textarea',ph:'담당자 메모'}
+  ],async d=>{const r=await adminPost('/waste-api/admin/users',d);if(r.success){toast(r.message);closeEditModal();loadUsers()}else toast(r.message,false)})
+}
 async function editUser(id){
   const data=await adminFetch('/waste-api/admin/users');if(!data)return;
   const d=data.find(x=>x.USER_ID===id);if(!d)return;
-  openEditModal('사용자 수정','fa-users','#059669',[{n:'LOGIN_ID',l:'로그인 ID',v:d.LOGIN_ID,dis:true},{n:'PASSWORD',l:'비밀번호 (변경시만)',type:'password',ph:'변경할 비밀번호'},{n:'USER_NAME',l:'이름 *',v:d.USER_NAME},{n:'ROLE',l:'역할',type:'select',opts:[['USER','일반 사용자'],['ADMIN','관리자']],v:d.ROLE},{n:'EMAIL',l:'이메일',v:d.EMAIL},{n:'PHONE',l:'연락처',v:d.PHONE},{n:'ACTIVE_YN',l:'상태',type:'select',opts:[['Y','활성'],['N','비활성']],v:d.ACTIVE_YN}],async data=>{if(!data.PASSWORD)delete data.PASSWORD;const r=await adminPut('/waste-api/admin/users/'+id,data);if(r.success){toast(r.message);closeEditModal();loadUsers()}else toast(r.message,false)})
+  const staffOpts=[['ADMIN','관리자'],['CENTER','배출 담당'],['COLLECTOR','수거 기사'],['PROCESSOR','압축 처리'],['RECYCLER','재활용 담당'],['PRODUCER','생산 담당']];
+  openEditModal('사용자 / 담당자 수정','fa-user-edit','#059669',[
+    {n:'LOGIN_ID',l:'로그인 ID',v:d.LOGIN_ID,dis:true},
+    {n:'PASSWORD',l:'비밀번호 (변경시만)',type:'password',ph:'변경할 비밀번호'},
+    {n:'USER_NAME',l:'이름 *',v:d.USER_NAME},
+    {n:'ROLE',l:'역할',type:'select',opts:[['USER','일반 사용자'],['ADMIN','관리자']],v:d.ROLE},
+    {n:'STAFF_TYPE',l:'담당 유형',type:'select',opts:staffOpts,v:d.STAFF_TYPE},
+    {n:'COMPANY_CODE',l:'소속 코드',v:d.COMPANY_CODE,ph:'CTR-001, COL-001 등'},
+    {n:'COMPANY_NAME',l:'소속 명칭',v:d.COMPANY_NAME,ph:'서울 물류센터'},
+    {n:'VEHICLE_NO',l:'차량 번호 (수거기사)',v:d.VEHICLE_NO,ph:'12가3456'},
+    {n:'EMAIL',l:'이메일',v:d.EMAIL},
+    {n:'PHONE',l:'연락처',v:d.PHONE},
+    {n:'STAFF_REMARKS',l:'비고',type:'textarea',v:d.STAFF_REMARKS,ph:'담당자 메모'},
+    {n:'ACTIVE_YN',l:'상태',type:'select',opts:[['Y','활성'],['N','비활성']],v:d.ACTIVE_YN}
+  ],async data=>{if(!data.PASSWORD)delete data.PASSWORD;const r=await adminPut('/waste-api/admin/users/'+id,data);if(r.success){toast(r.message);closeEditModal();loadUsers()}else toast(r.message,false)})
 }
 async function delUser(id,loginId){if(!confirm(loginId+' 사용자를 삭제하시겠습니까?'))return;const r=await adminDel('/waste-api/admin/users/'+id);if(r.success){toast(r.message);loadUsers()}else toast(r.message,false)}
 
