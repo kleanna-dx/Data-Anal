@@ -661,8 +661,8 @@ tbody tr:hover{background:#f0fdf4}
     <a class="nav-item active" data-page="dashboard"><i class="fas fa-chart-pie"></i>대시보드</a>
     <a class="nav-item" data-page="input"><i class="fas fa-edit"></i>데이터 입력</a>
     <a class="nav-item" data-page="tracking"><i class="fas fa-route"></i>추적 조회</a>
-    <div class="nav-section" id="adminSection" style="display:none">관리자</div>
-    <a class="nav-item" data-page="admin" id="adminNav" style="display:none"><i class="fas fa-cogs"></i>시스템 관리</a>
+    <div class="nav-section">관리자</div>
+    <a class="nav-item" data-page="admin" id="adminNav"><i class="fas fa-cogs"></i>시스템 관리 <i class="fas fa-lock" id="adminLockIcon" style="font-size:10px;margin-left:auto;color:#f59e0b"></i></a>
   </nav>
   <div class="sidebar-footer">
     <div id="sidebarUser" style="display:none;margin-bottom:6px;font-size:12px"></div>
@@ -1040,8 +1040,8 @@ function authHeaders(){ return authToken?{'Authorization':'Bearer '+authToken,'C
 
 function updateAuthUI(){
   const show=isAdmin();
-  document.getElementById('adminSection').style.display=show?'':'none';
-  document.getElementById('adminNav').style.display=show?'':'none';
+  const lockIcon=document.getElementById('adminLockIcon');
+  if(lockIcon) lockIcon.style.display=show?'none':'';
   if(show){
     document.getElementById('userBar').style.display='flex';
     document.getElementById('userName').textContent=authUser.userName;
