@@ -12,6 +12,41 @@ function now() { return new Date().toISOString().slice(0, 19).replace('T', ' ') 
 function ok(data: any, msg = '성공') { return { success: true, message: msg, data, timestamp: now() } }
 function err(msg: string) { return { success: false, message: msg, data: null, timestamp: now() } }
 
+// ===== ESG / GHG Protocol 기반 CO₂ 배출계수 =====
+// 출처: 환경부 국가 온실가스 배출계수, 한국전력 전력배출계수, GHG Protocol Scope 3 Category 5
+// Scope 1: 직접 배출 (사업장 소유·통제 이동연소)
+//   경유(diesel) 차량: 연비 0.0826 L/km × 배출계수 2.6 kgCO₂/L = 0.2148 kgCO₂/km
+//   (환경부 온실가스 종합정보센터 국가 배출계수)
+const SCOPE1_DIESEL_FACTOR = 0.2148 // kgCO₂/km (경유 수거차량)
+
+// Scope 2: 간접 배출 (구매 전력 사용)
+//   한국전력 전력배출계수: 0.4594 kgCO₂/kWh (2024 전력배출계수)
+//   폐기물 압축기 전력원단위: 약 0.015 kWh/kg 처리량 (산업 평균)
+//   최종: 0.4594 × 0.015 = 0.00689 kgCO₂/kg
+const SCOPE2_GRID_FACTOR = 0.4594  // kgCO₂/kWh (한국전력 2024)
+const SCOPE2_COMPRESS_POWER = 0.015 // kWh/kg (압축기 전력원단위)
+
+// Scope 3: 기타 간접 배출 — 재활용에 의한 회피(avoided) 배출
+//   GHG Protocol Scope 3 Category 5: Waste Generated in Operations
+//   폐기물 종류별 재활용 회피 배출계수 (kgCO₂e/kg recycled output)
+const SCOPE3_AVOID_FACTORS: Record<string, number> = {
+  'PAPER':   2.86,   // 종이류: 원료 대체 + 에너지 절감 (GHG Protocol / IPCC)
+  'PAPER_WASTE': 2.86, // 종이 폐기물: PAPER와 동일
+  'CARDBOARD': 2.86,   // 골판지: 종이류와 동일 회피계수
+  'NEWSPAPER': 2.86,   // 신문지: 종이류와 동일 회피계수
+  'MIXED_PAPER': 2.86, // 혼합 종이: 종이류와 동일 회피계수
+  'PLASTIC': 1.53,   // 플라스틱: 석유 기반 원료 대체 효과
+  'METAL':   4.10,   // 금속류: 광석 제련 대비 재활용 절감
+  'GLASS':   0.42,   // 유리류: 원료 제조 에너지 절감
+  'TEXTILE': 3.17,   // 섬유류: 원면/합성섬유 제조 대체
+  'FOOD':    0.58,   // 음식물: 퇴비화·혐기처리 메탄 회피
+  'WOOD':    1.76,   // 목재류: 재활용 에너지 절감
+  'OTHER':   1.80    // 기타: 가중 평균값
+}
+function getScope3Factor(wasteType: string): number {
+  return SCOPE3_AVOID_FACTORS[wasteType] || SCOPE3_AVOID_FACTORS['OTHER']
+}
+
 async function genTrackingNo(db: D1Database) {
   const prefix = `WTK-${today().replace(/-/g, '')}-`
   const r = await db.prepare(`SELECT MAX(TRACKING_NO) as mx FROM MOD_WASTE_TRACKING WHERE TRACKING_NO LIKE ?`).bind(prefix + '%').first<{mx:string|null}>()
@@ -333,7 +368,9 @@ app.post('/waste-api/tracking/collection', async (c) => {
   const t = await db.prepare(`SELECT * FROM MOD_WASTE_TRACKING WHERE TRACKING_ID=? AND DEL_YN='N'`).bind(body.trackingId).first()
   if (!t) return c.json(err('트래킹을 찾을 수 없습니다'), 404)
   if (STAGE_ORDER[(t as any).CURRENT_STAGE] !== 1) return c.json(err('현재 단계에서 수거를 등록할 수 없습니다 (배출 단계에서만 가능)'), 400)
-  const co2 = body.distanceKm ? +(body.distanceKm * 0.21).toFixed(2) : null
+  // Scope 1: 직접 배출 — 경유 수거차량 이동연소
+  // 수식: 거리(km) × 0.2148 kgCO₂/km (= 0.0826 L/km × 2.6 kgCO₂/L)
+  const co2 = body.distanceKm ? +(body.distanceKm * SCOPE1_DIESEL_FACTOR).toFixed(2) : null
   await db.prepare(`INSERT INTO MOD_WASTE_COLLECTION (TRACKING_ID,COLLECTOR_CODE,COLLECTOR_NAME,VEHICLE_NO,DRIVER_NAME,COLLECTION_START_AT,COLLECTION_END_AT,COLLECTED_WEIGHT_KG,ORIGIN_ADDRESS,DESTINATION_ADDRESS,DISTANCE_KM,CO2_EMISSION_KG,REMARKS,CREATED_AT,DEL_YN) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .bind(body.trackingId, body.collectorCode, body.collectorName, body.vehicleNo||'', body.driverName||'', body.collectionStartAt, body.collectionEndAt||'', body.collectedWeightKg, body.originAddress||'', body.destinationAddress||'', body.distanceKm||0, co2, body.remarks||'', now(), 'N').run()
   await db.prepare(`UPDATE MOD_WASTE_TRACKING SET CURRENT_STAGE='COLLECTION',STATUS='IN_PROGRESS',UPDATED_AT=? WHERE TRACKING_ID=?`).bind(now(), body.trackingId).run()
@@ -354,8 +391,11 @@ app.post('/waste-api/tracking/compression', async (c) => {
     lossW = +(body.inputWeightKg - body.outputWeightKg).toFixed(2)
     lossR = +((lossW / body.inputWeightKg) * 100).toFixed(2)
   }
-  await db.prepare(`INSERT INTO MOD_WASTE_COMPRESSION (TRACKING_ID,PROCESSOR_CODE,PROCESSOR_NAME,PROCESS_START_AT,PROCESS_END_AT,INPUT_WEIGHT_KG,OUTPUT_WEIGHT_KG,LOSS_WEIGHT_KG,LOSS_RATE,COMPRESSION_DENSITY,BALE_COUNT,REMARKS,CREATED_AT,DEL_YN) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(body.trackingId, body.processorCode, body.processorName, body.processStartAt, body.processEndAt||'', body.inputWeightKg, body.outputWeightKg||0, lossW, lossR, body.compressionDensity||0, body.baleCount||0, body.remarks||'', now(), 'N').run()
+  // Scope 2: 간접 배출 — 압축기 구매전력 사용
+  // 수식: 투입중량(kg) × 전력원단위(0.015 kWh/kg) × 전력배출계수(0.4594 kgCO₂/kWh)
+  const co2Scope2 = body.inputWeightKg ? +(body.inputWeightKg * SCOPE2_COMPRESS_POWER * SCOPE2_GRID_FACTOR).toFixed(2) : null
+  await db.prepare(`INSERT INTO MOD_WASTE_COMPRESSION (TRACKING_ID,PROCESSOR_CODE,PROCESSOR_NAME,PROCESS_START_AT,PROCESS_END_AT,INPUT_WEIGHT_KG,OUTPUT_WEIGHT_KG,LOSS_WEIGHT_KG,LOSS_RATE,COMPRESSION_DENSITY,BALE_COUNT,CO2_EMISSION_KG,REMARKS,CREATED_AT,DEL_YN) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(body.trackingId, body.processorCode, body.processorName, body.processStartAt, body.processEndAt||'', body.inputWeightKg, body.outputWeightKg||0, lossW, lossR, body.compressionDensity||0, body.baleCount||0, co2Scope2, body.remarks||'', now(), 'N').run()
   await db.prepare(`UPDATE MOD_WASTE_TRACKING SET CURRENT_STAGE='COMPRESSION',UPDATED_AT=? WHERE TRACKING_ID=?`).bind(now(), body.trackingId).run()
   return c.json(ok({ trackingId: body.trackingId }, '압축 처리 등록 완료'), 201)
 })
@@ -370,12 +410,18 @@ app.post('/waste-api/tracking/recycling', async (c) => {
   if (!t) return c.json(err('트래킹을 찾을 수 없습니다'), 404)
   if (STAGE_ORDER[(t as any).CURRENT_STAGE] !== 3) return c.json(err('압축 단계에서만 재활용을 등록할 수 있습니다'), 400)
   let rate = null, co2s = null
+  // 폐기물 종류 조회 (Scope 3 회피계수 적용용)
+  const trackInfo = await db.prepare(`SELECT WASTE_TYPE FROM MOD_WASTE_TRACKING WHERE TRACKING_ID=? AND DEL_YN='N'`).bind(body.trackingId).first<{WASTE_TYPE:string}>()
+  const wasteType = trackInfo?.WASTE_TYPE || 'OTHER'
   if (body.outputWeightKg && body.inputWeightKg) {
     rate = +((body.outputWeightKg / body.inputWeightKg) * 100).toFixed(2)
-    co2s = +(body.outputWeightKg * 2.3).toFixed(2)
+    // Scope 3: 기타 간접 배출 — 재활용에 의한 회피(avoided) 배출
+    // 수식: 재활용 산출량(kg) × 폐기물종류별 회피계수(kgCO₂e/kg)
+    // 출처: GHG Protocol Scope 3 Category 5, IPCC 폐기물 부문 가이드라인
+    co2s = +(body.outputWeightKg * getScope3Factor(wasteType)).toFixed(2)
   }
-  await db.prepare(`INSERT INTO MOD_WASTE_RECYCLING (TRACKING_ID,RECYCLER_CODE,RECYCLER_NAME,PROCESS_START_AT,PROCESS_END_AT,INPUT_WEIGHT_KG,OUTPUT_WEIGHT_KG,RECYCLING_RATE,RECYCLING_METHOD,CO2_SAVING_KG,REMARKS,CREATED_AT,DEL_YN) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(body.trackingId, body.recyclerCode, body.recyclerName, body.processStartAt, body.processEndAt||'', body.inputWeightKg, body.outputWeightKg||0, rate, body.recyclingMethod||'', co2s, body.remarks||'', now(), 'N').run()
+  await db.prepare(`INSERT INTO MOD_WASTE_RECYCLING (TRACKING_ID,RECYCLER_CODE,RECYCLER_NAME,PROCESS_START_AT,PROCESS_END_AT,INPUT_WEIGHT_KG,OUTPUT_WEIGHT_KG,RECYCLING_RATE,RECYCLING_METHOD,CO2_SAVING_KG,WASTE_TYPE,REMARKS,CREATED_AT,DEL_YN) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(body.trackingId, body.recyclerCode, body.recyclerName, body.processStartAt, body.processEndAt||'', body.inputWeightKg, body.outputWeightKg||0, rate, body.recyclingMethod||'', co2s, wasteType, body.remarks||'', now(), 'N').run()
   await db.prepare(`UPDATE MOD_WASTE_TRACKING SET CURRENT_STAGE='RECYCLING',UPDATED_AT=? WHERE TRACKING_ID=?`).bind(now(), body.trackingId).run()
   return c.json(ok({ trackingId: body.trackingId }, '재활용 등록 완료'), 201)
 })
@@ -431,19 +477,41 @@ app.get('/waste-api/dashboard', async (c) => {
   const recycleQ = await db.prepare(`SELECT COALESCE(AVG(RECYCLING_RATE),0) as avgRate, COALESCE(SUM(CO2_SAVING_KG),0) as co2Save FROM MOD_WASTE_RECYCLING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=?`).bind(sd, ed + ' 23:59:59').first<{avgRate:number,co2Save:number}>()
   const lossQ = await db.prepare(`SELECT COALESCE(AVG(LOSS_RATE),0) as avgLoss FROM MOD_WASTE_COMPRESSION WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=?`).bind(sd, ed + ' 23:59:59').first<{avgLoss:number}>()
   const distQ = await db.prepare(`SELECT COALESCE(SUM(DISTANCE_KM),0) as dist, COALESCE(SUM(CO2_EMISSION_KG),0) as co2E FROM MOD_WASTE_COLLECTION WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=?`).bind(sd, ed + ' 23:59:59').first<{dist:number,co2E:number}>()
+  // Scope 2: 압축 처리 전력 CO2 배출
+  const compCo2Q = await db.prepare(`SELECT COALESCE(SUM(CO2_EMISSION_KG),0) as co2E FROM MOD_WASTE_COMPRESSION WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=?`).bind(sd, ed + ' 23:59:59').first<{co2E:number}>()
   const dailyQ = await db.prepare(`SELECT DATE(CREATED_AT) as dt, COUNT(*) as cnt, COALESCE(SUM(TOTAL_WEIGHT_KG),0) as wt FROM MOD_WASTE_TRACKING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY DATE(CREATED_AT) ORDER BY dt`).bind(sd, ed + ' 23:59:59').all()
   const centerQ = await db.prepare(`SELECT CENTER_NAME as name, COUNT(*) as cnt, COALESCE(SUM(WEIGHT_KG),0) as wt FROM MOD_WASTE_DISCHARGE WHERE DEL_YN='N' AND DISCHARGE_DATE>=? AND DISCHARGE_DATE<=? GROUP BY CENTER_NAME ORDER BY wt DESC`).bind(sd, ed).all()
   const wasteTypeQ = await db.prepare(`SELECT WASTE_TYPE as tp, COUNT(*) as cnt, COALESCE(SUM(WEIGHT_KG),0) as wt FROM MOD_WASTE_DISCHARGE WHERE DEL_YN='N' AND DISCHARGE_DATE>=? AND DISCHARGE_DATE<=? GROUP BY WASTE_TYPE`).bind(sd, ed).all()
   const collectorQ = await db.prepare(`SELECT COLLECTOR_NAME as name, COUNT(*) as cnt, COALESCE(SUM(COLLECTED_WEIGHT_KG),0) as wt, COALESCE(SUM(DISTANCE_KM),0) as dist FROM MOD_WASTE_COLLECTION WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY COLLECTOR_NAME`).bind(sd, ed + ' 23:59:59').all()
 
+  // ESG Scope별 CO2 계산
+  const scope1 = +(distQ?.co2E || 0)     // Scope 1: 수거차량 직접 배출
+  const scope2 = +(compCo2Q?.co2E || 0)   // Scope 2: 압축 처리 전력
+  const scope3Saving = +(recycleQ?.co2Save || 0)  // Scope 3: 재활용 회피 배출 (절감)
+  const totalEmission = +(scope1 + scope2).toFixed(1)
+  const netReduction = +(scope3Saving - totalEmission).toFixed(1)
+
   return c.json(ok({
     totalCount: totalQ?.cnt || 0,
     totalWeightKg: totalQ?.total || 0,
     avgRecyclingRate: +(recycleQ?.avgRate || 0).toFixed(1),
-    totalCo2SavingKg: +(recycleQ?.co2Save || 0).toFixed(1),
+    totalCo2SavingKg: +scope3Saving.toFixed(1),
     avgLossRate: +(lossQ?.avgLoss || 0).toFixed(1),
     totalDistanceKm: +(distQ?.dist || 0).toFixed(1),
     totalCo2EmissionKg: +(distQ?.co2E || 0).toFixed(1),
+    // ESG/GHG Protocol Scope별 CO2 데이터
+    co2Scope: {
+      scope1: +scope1.toFixed(1),           // Scope 1: 직접 배출 (수거차량 연료 연소)
+      scope2: +scope2.toFixed(1),           // Scope 2: 간접 배출 (압축 처리 구매 전력)
+      scope3Saving: +scope3Saving.toFixed(1), // Scope 3: 재활용 회피 배출 (절감)
+      totalEmission: totalEmission,          // Scope 1 + 2 총 배출
+      netReduction: netReduction,            // 순 CO2 절감 (Scope 3 - (1+2))
+      factors: {
+        scope1: 'SCOPE1: ' + SCOPE1_DIESEL_FACTOR + ' kgCO₂/km (경유 차량, 환경부 국가 배출계수)',
+        scope2: 'SCOPE2: ' + SCOPE2_GRID_FACTOR + ' kgCO₂/kWh × ' + SCOPE2_COMPRESS_POWER + ' kWh/kg (한국전력 2024, 압축기 전력원단위)',
+        scope3: 'SCOPE3: 폐기물 종류별 회피계수 (GHG Protocol Category 5 / IPCC)'
+      }
+    },
     stageStats: stageQ.results,
     statusStats: statusQ.results,
     dailyStats: dailyQ.results,
@@ -497,10 +565,22 @@ app.get('/waste-api/dashboard/detail', async (c) => {
       return c.json(ok({ byCollector: byCollector.results, recent: recent.results }))
     }
     case 'co2': {
-      // CO2 절감 세부: 재활용 업체별 절감 + 수거 업체별 배출
-      const savings = await db.prepare(`SELECT RECYCLER_NAME as name, COUNT(*) as cnt, COALESCE(SUM(CO2_SAVING_KG),0) as co2Save, COALESCE(SUM(OUTPUT_WEIGHT_KG),0) as totalOut FROM MOD_WASTE_RECYCLING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY RECYCLER_NAME ORDER BY co2Save DESC`).bind(sd, ed + ' 23:59:59').all()
-      const emissions = await db.prepare(`SELECT COLLECTOR_NAME as name, COUNT(*) as cnt, COALESCE(SUM(CO2_EMISSION_KG),0) as co2Emit, COALESCE(SUM(DISTANCE_KM),0) as totalDist FROM MOD_WASTE_COLLECTION WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY COLLECTOR_NAME ORDER BY co2Emit DESC`).bind(sd, ed + ' 23:59:59').all()
-      return c.json(ok({ savings: savings.results, emissions: emissions.results }))
+      // CO2 ESG Scope별 세부: Scope 1 (수거), Scope 2 (압축), Scope 3 (재활용 절감)
+      // Scope 1: 수거 업체별 직접 배출
+      const scope1Detail = await db.prepare(`SELECT COLLECTOR_NAME as name, COLLECTOR_CODE as code, COUNT(*) as cnt, COALESCE(SUM(CO2_EMISSION_KG),0) as co2, COALESCE(SUM(DISTANCE_KM),0) as dist, COALESCE(SUM(COLLECTED_WEIGHT_KG),0) as wt FROM MOD_WASTE_COLLECTION WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY COLLECTOR_NAME,COLLECTOR_CODE ORDER BY co2 DESC`).bind(sd, ed + ' 23:59:59').all()
+      // Scope 2: 압축 처리 업체별 전력 배출
+      const scope2Detail = await db.prepare(`SELECT PROCESSOR_NAME as name, PROCESSOR_CODE as code, COUNT(*) as cnt, COALESCE(SUM(CO2_EMISSION_KG),0) as co2, COALESCE(SUM(INPUT_WEIGHT_KG),0) as inputKg FROM MOD_WASTE_COMPRESSION WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY PROCESSOR_NAME,PROCESSOR_CODE ORDER BY co2 DESC`).bind(sd, ed + ' 23:59:59').all()
+      // Scope 3: 재활용 업체별 회피 배출 (절감)
+      const scope3Detail = await db.prepare(`SELECT RECYCLER_NAME as name, RECYCLER_CODE as code, COUNT(*) as cnt, COALESCE(SUM(CO2_SAVING_KG),0) as co2Save, COALESCE(SUM(OUTPUT_WEIGHT_KG),0) as totalOut, COALESCE(WASTE_TYPE,'OTHER') as wasteType FROM MOD_WASTE_RECYCLING WHERE DEL_YN='N' AND CREATED_AT>=? AND CREATED_AT<=? GROUP BY RECYCLER_NAME,RECYCLER_CODE ORDER BY co2Save DESC`).bind(sd, ed + ' 23:59:59').all()
+      // Scope 3: 폐기물 종류별 절감
+      const scope3ByType = await db.prepare(`SELECT COALESCE(r.WASTE_TYPE,t.WASTE_TYPE) as wasteType, COUNT(*) as cnt, COALESCE(SUM(r.CO2_SAVING_KG),0) as co2Save, COALESCE(SUM(r.OUTPUT_WEIGHT_KG),0) as totalOut FROM MOD_WASTE_RECYCLING r LEFT JOIN MOD_WASTE_TRACKING t ON r.TRACKING_ID=t.TRACKING_ID WHERE r.DEL_YN='N' AND r.CREATED_AT>=? AND r.CREATED_AT<=? GROUP BY COALESCE(r.WASTE_TYPE,t.WASTE_TYPE) ORDER BY co2Save DESC`).bind(sd, ed + ' 23:59:59').all()
+      // 배출계수 정보
+      const factors = {
+        scope1: { formula: '거리(km) × 0.2148 kgCO₂/km', detail: '경유 차량: 연비 0.0826 L/km × 배출계수 2.6 kgCO₂/L', source: '환경부 국가 온실가스 배출계수' },
+        scope2: { formula: '처리량(kg) × 0.015 kWh/kg × 0.4594 kgCO₂/kWh', detail: '압축기 전력원단위 × 한국전력 전력배출계수', source: '한국전력 2024, 산업 평균' },
+        scope3: { formula: '재활용산출(kg) × 종류별 회피계수', detail: '종이 2.86 / 플라스틱 1.53 / 금속 4.10 / 유리 0.42 / 섬유 3.17 / 음식물 0.58 / 목재 1.76 / 기타 1.80 kgCO₂e/kg', source: 'GHG Protocol Scope 3 Category 5, IPCC' }
+      }
+      return c.json(ok({ scope1: scope1Detail.results, scope2: scope2Detail.results, scope3: scope3Detail.results, scope3ByType: scope3ByType.results, factors }))
     }
     default:
       return c.json(err('알 수 없는 타입입니다'), 400)
@@ -838,7 +918,7 @@ tbody tr:hover{background:#f0fdf4}
       <div class="kpi kpi-click" data-detail="recycling"><div class="kpi-icon" style="background:#ccfbf1;color:#14b8a6"><i class="fas fa-recycle"></i></div><div class="kpi-label">평균 재활용률</div><div class="kpi-value" id="k-recycle">-</div><div class="kpi-unit">%</div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> 세부사항 보기</div></div>
       <div class="kpi kpi-click" data-detail="loss"><div class="kpi-icon" style="background:#fef3c7;color:#f59e0b"><i class="fas fa-exclamation-triangle"></i></div><div class="kpi-label">평균 Loss율</div><div class="kpi-value" id="k-loss">-</div><div class="kpi-unit">%</div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> 세부사항 보기</div></div>
       <div class="kpi kpi-click" data-detail="distance"><div class="kpi-icon" style="background:#ede9fe;color:#8b5cf6"><i class="fas fa-road"></i></div><div class="kpi-label">총 이동거리</div><div class="kpi-value" id="k-dist">-</div><div class="kpi-unit">km</div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> 세부사항 보기</div></div>
-      <div class="kpi kpi-click" data-detail="co2"><div class="kpi-icon" style="background:#dcfce7;color:#22c55e"><i class="fas fa-leaf"></i></div><div class="kpi-label">CO2 절감</div><div class="kpi-value" id="k-co2">-</div><div class="kpi-unit">kg CO2</div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> 세부사항 보기</div></div>
+      <div class="kpi kpi-click" data-detail="co2"><div class="kpi-icon" style="background:#dcfce7;color:#22c55e"><i class="fas fa-leaf"></i></div><div class="kpi-label">CO2 절감 <span style="font-size:10px;color:var(--c-text3)">(ESG Scope 1·2·3)</span></div><div class="kpi-value" id="k-co2">-</div><div class="kpi-unit">kg CO₂e (순 절감)</div><div id="k-co2-scope" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"></div><div class="kpi-hint"><i class="fas fa-chevron-down"></i> Scope별 세부사항 보기</div></div>
     </div>
     <!-- KPI Detail Panel -->
     <div id="kpiDetailPanel" class="kpi-detail-panel" style="display:none">
@@ -1387,7 +1467,15 @@ function renderDash(d){
   document.getElementById('k-recycle').textContent=(d.avgRecyclingRate||0).toFixed(1);
   document.getElementById('k-loss').textContent=(d.avgLossRate||0).toFixed(1);
   document.getElementById('k-dist').textContent=fmt(d.totalDistanceKm);
-  document.getElementById('k-co2').textContent=fmt(d.totalCo2SavingKg);
+  document.getElementById('k-co2').textContent=fmt(d.co2Scope?d.co2Scope.netReduction:d.totalCo2SavingKg);
+  // Scope별 미니 뱃지 표시
+  if(d.co2Scope){
+    const sc=d.co2Scope;
+    document.getElementById('k-co2-scope').innerHTML=
+      '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#fef2f2;color:#dc2626" title="Scope 1: 수거차량 직접 배출"><i class="fas fa-truck" style="font-size:9px"></i>S1 '+fmt(sc.scope1)+'</span>'+
+      '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#fef9c3;color:#ca8a04" title="Scope 2: 압축처리 전력 배출"><i class="fas fa-bolt" style="font-size:9px"></i>S2 '+fmt(sc.scope2)+'</span>'+
+      '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#dcfce7;color:#15803d" title="Scope 3: 재활용 회피 절감"><i class="fas fa-recycle" style="font-size:9px"></i>S3 -'+fmt(sc.scope3Saving)+'</span>';
+  }
   if(ch1)ch1.destroy();if(ch2)ch2.destroy();if(ch3)ch3.destroy();if(ch4)ch4.destroy();
   const ds=d.dailyStats||[];
   ch1=new Chart(document.getElementById('chDaily'),{type:'bar',data:{labels:ds.map(x=>{const p=x.dt.split('-');return p[1]+'/'+p[2]}),datasets:[{label:'배출량(kg)',data:ds.map(x=>x.wt),backgroundColor:'rgba(16,185,129,.65)',borderColor:'#10b981',borderWidth:1,borderRadius:6,barPercentage:.6},{label:'건수',data:ds.map(x=>x.cnt),type:'line',borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.08)',yAxisID:'y1',tension:.4,pointRadius:5,pointBackgroundColor:'#3b82f6',fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{font:{size:12}}}},scales:{y:{beginAtZero:true,title:{display:true,text:'kg',font:{size:11}},grid:{color:'rgba(0,0,0,.04)'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'건수',font:{size:11}}},x:{grid:{display:false}}}}});
@@ -1664,41 +1752,112 @@ function renderDistanceDetail(el,d){
   }
 }
 
-/* --- CO2 Detail --- */
+/* --- CO2 Detail (ESG Scope 1/2/3) --- */
 function renderCo2Detail(el,d){
-  const totalSave=d.savings.reduce((s,r)=>s+r.co2Save,0);
-  const totalEmit=d.emissions.reduce((s,r)=>s+r.co2Emit,0);
-  const net=totalSave-totalEmit;
-  let html='<div class="detail-tabs"><button class="detail-tab on" data-dt="c-summary">요약</button><button class="detail-tab" data-dt="c-save">CO2 절감 (재활용)</button><button class="detail-tab" data-dt="c-emit">CO2 배출 (운송)</button></div>';
+  const totalS1=d.scope1.reduce((s,r)=>s+r.co2,0);
+  const totalS2=d.scope2.reduce((s,r)=>s+r.co2,0);
+  const totalS3=d.scope3.reduce((s,r)=>s+r.co2Save,0);
+  const totalEmit=totalS1+totalS2;
+  const net=totalS3-totalEmit;
 
+  let html='<div class="detail-tabs"><button class="detail-tab on" data-dt="c-summary">ESG 요약</button><button class="detail-tab" data-dt="c-scope1">Scope 1 (직접)</button><button class="detail-tab" data-dt="c-scope2">Scope 2 (전력)</button><button class="detail-tab" data-dt="c-scope3">Scope 3 (절감)</button><button class="detail-tab" data-dt="c-formula">산출 수식</button></div>';
+
+  // === Summary Tab ===
   html+='<div id="dt-c-summary" class="detail-sub show">';
-  html+='<div class="detail-summary-grid"><div class="detail-summary-item" style="border:2px solid #dcfce7"><div class="ds-label" style="color:#16a34a">총 CO2 절감</div><div class="ds-value" style="color:#15803d">'+fmt(totalSave)+'</div><div class="ds-unit">kg CO2</div></div><div class="detail-summary-item" style="border:2px solid #fecaca"><div class="ds-label" style="color:#dc2626">총 CO2 배출</div><div class="ds-value" style="color:#b91c1c">'+fmt(totalEmit)+'</div><div class="ds-unit">kg CO2</div></div><div class="detail-summary-item" style="border:2px solid '+(net>=0?'#dbeafe':'#fecaca')+'"><div class="ds-label" style="color:'+(net>=0?'#2563eb':'#dc2626')+'">순 CO2 절감</div><div class="ds-value" style="color:'+(net>=0?'#1d4ed8':'#b91c1c')+'">'+fmt(net)+'</div><div class="ds-unit">kg CO2</div></div></div>';
+  // Scope Summary Cards
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">';
+  // Scope 1
+  html+='<div style="background:linear-gradient(135deg,#fef2f2,#fff);border:2px solid #fecaca;border-radius:12px;padding:14px;text-align:center"><div style="font-size:10px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px"><i class="fas fa-truck" style="margin-right:4px"></i>Scope 1 직접 배출</div><div style="font-size:11px;color:#6b7280;margin-bottom:4px">수거차량 연료 연소</div><div style="font-size:22px;font-weight:900;color:#b91c1c">'+fmt(totalS1)+'</div><div style="font-size:10px;color:#9ca3af">kgCO₂</div></div>';
+  // Scope 2
+  html+='<div style="background:linear-gradient(135deg,#fefce8,#fff);border:2px solid #fde68a;border-radius:12px;padding:14px;text-align:center"><div style="font-size:10px;font-weight:700;color:#ca8a04;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px"><i class="fas fa-bolt" style="margin-right:4px"></i>Scope 2 간접 배출</div><div style="font-size:11px;color:#6b7280;margin-bottom:4px">압축 처리 구매 전력</div><div style="font-size:22px;font-weight:900;color:#a16207">'+fmt(totalS2)+'</div><div style="font-size:10px;color:#9ca3af">kgCO₂</div></div>';
+  // Scope 3
+  html+='<div style="background:linear-gradient(135deg,#f0fdf4,#fff);border:2px solid #bbf7d0;border-radius:12px;padding:14px;text-align:center"><div style="font-size:10px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px"><i class="fas fa-recycle" style="margin-right:4px"></i>Scope 3 회피 절감</div><div style="font-size:11px;color:#6b7280;margin-bottom:4px">재활용 원료 대체 효과</div><div style="font-size:22px;font-weight:900;color:#15803d">-'+fmt(totalS3)+'</div><div style="font-size:10px;color:#9ca3af">kgCO₂e (절감)</div></div>';
+  // Total
+  html+='<div style="background:linear-gradient(135deg,'+(net>=0?'#eff6ff':'#fef2f2')+',#fff);border:2px solid '+(net>=0?'#bfdbfe':'#fecaca')+';border-radius:12px;padding:14px;text-align:center"><div style="font-size:10px;font-weight:700;color:'+(net>=0?'#2563eb':'#dc2626')+';text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px"><i class="fas fa-leaf" style="margin-right:4px"></i>순 CO₂ 절감</div><div style="font-size:11px;color:#6b7280;margin-bottom:4px">Scope3 - (Scope1+2)</div><div style="font-size:22px;font-weight:900;color:'+(net>=0?'#1d4ed8':'#b91c1c')+'">'+fmt(net)+'</div><div style="font-size:10px;color:#9ca3af">kgCO₂e</div></div>';
+  html+='</div>';
+  // ESG 기준 안내
+  html+='<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:16px;font-size:11px;color:#475569"><div style="font-weight:700;color:#1e293b;margin-bottom:6px"><i class="fas fa-info-circle" style="color:#3b82f6;margin-right:4px"></i>ESG 공시 기준 (GHG Protocol)</div><div style="display:grid;gap:4px"><div><b>Scope 1</b> (직접 배출): 사업장 소유·통제 배출원 — 수거차량 경유 연소 배출</div><div><b>Scope 2</b> (에너지 간접): 구매 전력·열 사용 — 압축 처리 시설 전력 사용 배출</div><div><b>Scope 3</b> (기타 간접): 가치사슬 내 간접 배출/절감 — Category 5 폐기물 재활용 회피 배출</div></div></div>';
+  // Scope Chart
   html+='<div class="detail-chart-wrap"><canvas id="dtChCo2"></canvas></div>';
   html+='</div>';
 
-  html+='<div id="dt-c-save" class="detail-sub">';
-  html+='<table class="detail-tbl"><thead><tr><th>재활용 업체</th><th style="text-align:right">처리 건수</th><th style="text-align:right">산출량(kg)</th><th style="text-align:right">CO2 절감(kg)</th><th style="text-align:right">비중(%)</th></tr></thead><tbody>';
-  d.savings.forEach(r=>{
-    const pct=totalSave>0?((r.co2Save/totalSave)*100).toFixed(1):'0';
-    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.totalOut)+'</td><td class="num" style="color:#15803d;font-weight:800">'+fmt(r.co2Save)+'</td><td class="num">'+pct+'%</td></tr>';
+  // === Scope 1 Tab ===
+  html+='<div id="dt-c-scope1" class="detail-sub">';
+  html+='<div style="background:#fef2f2;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#991b1b"><i class="fas fa-fire" style="margin-right:4px"></i><b>Scope 1 산출식:</b> 이동거리(km) × 0.0826 L/km(연비) × 2.6 kgCO₂/L(경유 배출계수) = 0.2148 kgCO₂/km<br><span style="color:#6b7280">출처: 환경부 국가 온실가스 배출계수, 온실가스 종합정보센터</span></div>';
+  html+='<table class="detail-tbl"><thead><tr><th>수거 업체</th><th style="text-align:right">건수</th><th style="text-align:right">이동거리(km)</th><th style="text-align:right">수거량(kg)</th><th style="text-align:right">CO₂ 배출(kgCO₂)</th><th style="text-align:right">비중(%)</th></tr></thead><tbody>';
+  d.scope1.forEach(r=>{
+    const pct=totalS1>0?((r.co2/totalS1)*100).toFixed(1):'0';
+    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.dist)+'</td><td class="num">'+fmt(r.wt)+'</td><td class="num" style="color:#dc2626;font-weight:800">'+fmt(r.co2)+'</td><td class="num">'+pct+'%</td></tr>';
   });
+  if(!d.scope1.length) html+='<tr><td colspan="6" style="text-align:center;color:#9ca3af;padding:20px">데이터가 없습니다</td></tr>';
   html+='</tbody></table></div>';
 
-  html+='<div id="dt-c-emit" class="detail-sub">';
-  html+='<table class="detail-tbl"><thead><tr><th>수거 업체</th><th style="text-align:right">수거 건수</th><th style="text-align:right">이동거리(km)</th><th style="text-align:right">CO2 배출(kg)</th><th style="text-align:right">비중(%)</th></tr></thead><tbody>';
-  d.emissions.forEach(r=>{
-    const pct=totalEmit>0?((r.co2Emit/totalEmit)*100).toFixed(1):'0';
-    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.totalDist)+'</td><td class="num" style="color:#b91c1c;font-weight:800">'+fmt(r.co2Emit)+'</td><td class="num">'+pct+'%</td></tr>';
+  // === Scope 2 Tab ===
+  html+='<div id="dt-c-scope2" class="detail-sub">';
+  html+='<div style="background:#fefce8;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#854d0e"><i class="fas fa-bolt" style="margin-right:4px"></i><b>Scope 2 산출식:</b> 처리중량(kg) × 0.015 kWh/kg(전력원단위) × 0.4594 kgCO₂/kWh(전력배출계수)<br><span style="color:#6b7280">출처: 한국전력 2024 전력배출계수, 폐기물 압축기 산업 평균 전력원단위</span></div>';
+  html+='<table class="detail-tbl"><thead><tr><th>압축 처리 업체</th><th style="text-align:right">건수</th><th style="text-align:right">투입량(kg)</th><th style="text-align:right">전력사용 추정(kWh)</th><th style="text-align:right">CO₂ 배출(kgCO₂)</th><th style="text-align:right">비중(%)</th></tr></thead><tbody>';
+  d.scope2.forEach(r=>{
+    const pct=totalS2>0?((r.co2/totalS2)*100).toFixed(1):'0';
+    const kwh=(r.inputKg*0.015).toFixed(1);
+    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.inputKg)+'</td><td class="num">'+kwh+'</td><td class="num" style="color:#ca8a04;font-weight:800">'+fmt(r.co2)+'</td><td class="num">'+pct+'%</td></tr>';
   });
+  if(!d.scope2.length) html+='<tr><td colspan="6" style="text-align:center;color:#9ca3af;padding:20px">데이터가 없습니다</td></tr>';
   html+='</tbody></table></div>';
+
+  // === Scope 3 Tab ===
+  html+='<div id="dt-c-scope3" class="detail-sub">';
+  html+='<div style="background:#f0fdf4;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#166534"><i class="fas fa-recycle" style="margin-right:4px"></i><b>Scope 3 산출식:</b> 재활용산출량(kg) × 폐기물종류별 회피계수(kgCO₂e/kg)<br><span style="color:#6b7280">종이 2.86 | 플라스틱 1.53 | 금속 4.10 | 유리 0.42 | 섬유 3.17 | 음식물 0.58 | 목재 1.76 | 기타 1.80</span><br><span style="color:#6b7280">출처: GHG Protocol Scope 3 Category 5 (Waste Generated in Operations), IPCC 폐기물 부문</span></div>';
+  // 종류별 요약
+  if(d.scope3ByType&&d.scope3ByType.length){
+    const WT_NAME={PAPER:"종이류",PAPER_WASTE:"종이 폐기물",CARDBOARD:"골판지",NEWSPAPER:"신문지",MIXED_PAPER:"혼합 종이",PLASTIC:"플라스틱",METAL:"금속류",GLASS:"유리류",TEXTILE:"섬유류",FOOD:"음식물",WOOD:"목재류",OTHER:"기타"};
+    html+='<div style="margin-bottom:14px"><div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#1e293b"><i class="fas fa-chart-pie" style="color:#16a34a;margin-right:4px"></i>폐기물 종류별 Scope 3 절감</div>';
+    html+='<table class="detail-tbl"><thead><tr><th>폐기물 종류</th><th style="text-align:right">건수</th><th style="text-align:right">재활용산출(kg)</th><th style="text-align:right">회피계수</th><th style="text-align:right">CO₂ 절감(kgCO₂e)</th></tr></thead><tbody>';
+    d.scope3ByType.forEach(r=>{
+      const factor=({PAPER:2.86,PAPER_WASTE:2.86,CARDBOARD:2.86,NEWSPAPER:2.86,MIXED_PAPER:2.86,PLASTIC:1.53,METAL:4.10,GLASS:0.42,TEXTILE:3.17,FOOD:0.58,WOOD:1.76})[r.wasteType]||1.80;
+      html+='<tr><td style="font-weight:600">'+(WT_NAME[r.wasteType]||r.wasteType)+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.totalOut)+'</td><td class="num">'+factor+'</td><td class="num" style="color:#15803d;font-weight:800">'+fmt(r.co2Save)+'</td></tr>';
+    });
+    html+='</tbody></table></div>';
+  }
+  // 업체별 상세
+  html+='<div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#1e293b"><i class="fas fa-building" style="color:#16a34a;margin-right:4px"></i>재활용 업체별 Scope 3 절감</div>';
+  html+='<table class="detail-tbl"><thead><tr><th>재활용 업체</th><th style="text-align:right">건수</th><th style="text-align:right">산출량(kg)</th><th style="text-align:right">CO₂ 절감(kgCO₂e)</th><th style="text-align:right">비중(%)</th></tr></thead><tbody>';
+  d.scope3.forEach(r=>{
+    const pct=totalS3>0?((r.co2Save/totalS3)*100).toFixed(1):'0';
+    html+='<tr><td style="font-weight:600">'+r.name+'</td><td class="num">'+r.cnt+'</td><td class="num">'+fmt(r.totalOut)+'</td><td class="num" style="color:#15803d;font-weight:800">'+fmt(r.co2Save)+'</td><td class="num">'+pct+'%</td></tr>';
+  });
+  if(!d.scope3.length) html+='<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:20px">데이터가 없습니다</td></tr>';
+  html+='</tbody></table></div>';
+
+  // === Formula Tab ===
+  html+='<div id="dt-c-formula" class="detail-sub">';
+  html+='<div style="font-weight:700;font-size:15px;margin-bottom:14px;color:#1e293b"><i class="fas fa-calculator" style="color:#3b82f6;margin-right:6px"></i>CO₂ 산출 수식 (ESG 공시 기준)</div>';
+  // Scope 1
+  html+='<div style="background:#fff;border:1px solid #fecaca;border-radius:10px;padding:16px;margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="background:#dc2626;color:#fff;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:800">Scope 1</span><span style="font-weight:700;color:#1e293b">직접 배출 (Direct Emissions)</span></div>';
+  html+='<div style="background:#fef2f2;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;margin-bottom:8px;color:#7f1d1d">CO₂(kg) = 이동거리(km) × <b>0.0826</b> L/km × <b>2.6</b> kgCO₂/L = 거리 × <b>0.2148</b> kgCO₂/km</div>';
+  html+='<div style="font-size:11px;color:#6b7280"><b>적용 대상:</b> 수거 차량 경유(diesel) 연소<br><b>배출계수 출처:</b> 환경부 온실가스 종합정보센터 국가 배출계수<br><b>연비 기준:</b> 중형 화물차 (5톤 기준) 평균 연비</div></div>';
+  // Scope 2
+  html+='<div style="background:#fff;border:1px solid #fde68a;border-radius:10px;padding:16px;margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="background:#ca8a04;color:#fff;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:800">Scope 2</span><span style="font-weight:700;color:#1e293b">에너지 간접 배출 (Energy Indirect)</span></div>';
+  html+='<div style="background:#fefce8;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;margin-bottom:8px;color:#713f12">CO₂(kg) = 처리량(kg) × <b>0.015</b> kWh/kg × <b>0.4594</b> kgCO₂/kWh</div>';
+  html+='<div style="font-size:11px;color:#6b7280"><b>적용 대상:</b> 폐기물 압축 처리 시설 전력 사용<br><b>전력배출계수:</b> 한국전력 2024년 전력배출계수 0.4594 kgCO₂/kWh<br><b>전력원단위:</b> 폐기물 압축기 산업 평균 0.015 kWh/kg</div></div>';
+  // Scope 3
+  html+='<div style="background:#fff;border:1px solid #bbf7d0;border-radius:10px;padding:16px;margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="background:#16a34a;color:#fff;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:800">Scope 3</span><span style="font-weight:700;color:#1e293b">기타 간접 배출 - 회피 절감 (Avoided Emissions)</span></div>';
+  html+='<div style="background:#f0fdf4;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;margin-bottom:8px;color:#14532d">CO₂e(kg) = 재활용산출량(kg) × 종류별_회피계수(kgCO₂e/kg)</div>';
+  html+='<div style="font-size:11px;color:#6b7280;margin-bottom:8px"><b>적용 대상:</b> GHG Protocol Scope 3 Category 5 - 폐기물 재활용에 의한 원료 대체 효과<br><b>출처:</b> GHG Protocol Technical Guidance / IPCC 폐기물 부문 가이드라인</div>';
+  html+='<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#f0fdf4"><th style="padding:6px 8px;text-align:left;border-bottom:2px solid #bbf7d0">폐기물 종류</th><th style="padding:6px 8px;text-align:right;border-bottom:2px solid #bbf7d0">회피계수</th><th style="padding:6px 8px;text-align:left;border-bottom:2px solid #bbf7d0">산출 근거</th></tr></thead><tbody>';
+  const ftbl=[["종이류 (PAPER)","2.86","원목 펄프 제조 대비 재생펄프 에너지 절감"],["플라스틱 (PLASTIC)","1.53","석유 기반 원료 대체 + 소각 회피"],["금속류 (METAL)","4.10","광석 제련·정련 대비 재활용 에너지 절감"],["유리류 (GLASS)","0.42","규사 용융 대비 유리 cullet 재활용 절감"],["섬유류 (TEXTILE)","3.17","원면·합성섬유 제조 대비 재활용 절감"],["음식물 (FOOD)","0.58","매립 메탄 회피 + 퇴비화/혐기 처리"],["목재류 (WOOD)","1.76","원목 가공 대비 재활용 에너지 절감"],["기타 (OTHER)","1.80","가중 평균값"]];
+  ftbl.forEach(r=>{html+='<tr><td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-weight:600">'+r[0]+'</td><td style="padding:5px 8px;text-align:right;border-bottom:1px solid #e5e7eb;font-weight:800;color:#15803d">'+r[1]+' kgCO₂e/kg</td><td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;color:#6b7280">'+r[2]+'</td></tr>';});
+  html+='</tbody></table></div>';
+  // Net
+  html+='<div style="background:linear-gradient(135deg,'+(net>=0?'#eff6ff':'#fef2f2')+',#fff);border:2px solid '+(net>=0?'#93c5fd':'#fca5a5')+';border-radius:10px;padding:16px;text-align:center"><div style="font-weight:700;font-size:14px;color:'+(net>=0?'#1d4ed8':'#dc2626')+';margin-bottom:6px">순 CO₂ 절감량 = Scope 3 절감 - (Scope 1 + Scope 2) 배출</div>';
+  html+='<div style="font-family:monospace;font-size:18px;font-weight:900;color:'+(net>=0?'#1d4ed8':'#b91c1c')+'">'+fmt(totalS3)+' - ('+fmt(totalS1)+' + '+fmt(totalS2)+') = <span style="font-size:24px">'+fmt(net)+'</span> kgCO₂e</div></div>';
+  html+='</div>';
 
   el.innerHTML=html;
   bindDetailTabs(el);
 
-  // Chart: savings vs emissions stacked
-  const allNames=[...new Set([...d.savings.map(r=>r.name),...d.emissions.map(r=>r.name)])];
-  if(allNames.length||totalSave||totalEmit){
-    detailChart1=new Chart(document.getElementById('dtChCo2'),{type:'bar',data:{labels:['CO2 절감 (재활용)','CO2 배출 (운송)','순 절감'],datasets:[{label:'kg CO2',data:[totalSave,totalEmit,net],backgroundColor:['rgba(34,197,94,.6)','rgba(239,68,68,.6)',net>=0?'rgba(59,130,246,.6)':'rgba(239,68,68,.4)'],borderColor:['#22c55e','#ef4444',net>=0?'#3b82f6':'#ef4444'],borderWidth:1,borderRadius:8,barPercentage:.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'kg CO2'}},x:{grid:{display:false}}}}});
+  // Chart: Scope 1 vs 2 vs 3
+  if(totalS1||totalS2||totalS3){
+    detailChart1=new Chart(document.getElementById('dtChCo2'),{type:'bar',data:{labels:['Scope 1\\n(직접 배출)','Scope 2\\n(전력 간접)','Scope 3\\n(재활용 절감)','순 절감'],datasets:[{label:'kgCO₂e',data:[totalS1,totalS2,-totalS3,net],backgroundColor:['rgba(220,38,38,.65)','rgba(202,138,4,.65)','rgba(22,163,74,.65)',net>=0?'rgba(37,99,235,.65)':'rgba(220,38,38,.4)'],borderColor:['#dc2626','#ca8a04','#16a34a',net>=0?'#2563eb':'#dc2626'],borderWidth:2,borderRadius:10,barPercentage:.55}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return ctx.raw>=0?'+'+fmt(ctx.raw)+' kgCO₂':fmt(ctx.raw)+' kgCO₂e (절감)'}}}},scales:{y:{title:{display:true,text:'kgCO₂e',font:{size:11}},grid:{color:'rgba(0,0,0,.04)'}},x:{grid:{display:false}}}}});
   }
 }
 
