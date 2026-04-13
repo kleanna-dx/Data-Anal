@@ -1,22 +1,18 @@
 {
   "name": "webapp",
-  "type": "module",
+  "version": "1.0.0",
+  "description": "## v5: \"형상 복제기\" 아키텍처",
+  "main": "index.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "wrangler pages dev",
-    "deploy": "npm run build && wrangler pages deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "hono": "^4.12.12",
-    "puppeteer-core": "^24.0.0"
-  },
-  "devDependencies": {
-    "@hono/vite-build": "^1.2.0",
-    "@hono/vite-dev-server": "^0.18.2",
-    "playwright": "^1.59.1",
-    "vite": "^6.3.5",
-    "wrangler": "^4.4.0"
+    "express": "^5.2.1",
+    "js-yaml": "^4.1.1",
+    "multer": "^2.1.1",
+    "openai": "^6.33.0"
   }
 }

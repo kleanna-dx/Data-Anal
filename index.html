@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoDrawing — AI 도면 생성 + 편집 시스템</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=19">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ============ Header ============ -->
+    <header class="app-header">
+      <div class="app-logo">
+        <i class="fas fa-drafting-compass"></i>
+        <span>AutoDrawing</span>
+      </div>
+
+      <!-- DB Tab -->
+      <button class="btn btn-db-tab" id="btnDBTab" title="저장된 프로젝트">
+        <i class="fas fa-database"></i> DB
+      </button>
+
+      <!-- Step Indicator -->
+      <div class="step-indicator">
+        <div class="step-item active" data-step="1">
+          <span class="step-num">1</span>
+          <span>유형 선택</span>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-item" data-step="2">
+          <span class="step-num">2</span>
+          <span>AI 해석</span>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-item" data-step="3">
+          <span class="step-num">3</span>
+          <span>편집</span>
+        </div>
+      </div>
+
+      <!-- Header Actions -->
+      <div class="header-actions">
+        <button class="btn btn-save-draft" id="btnSaveDraft" disabled title="임시저장">
+          <i class="fas fa-save"></i> 임시저장
+        </button>
+        <button class="btn btn-ghost" id="btnNewProject" title="새 프로젝트">
+          <i class="fas fa-plus"></i> 새로 시작
+        </button>
+        <button class="btn btn-success" id="btnExport" disabled title="내보내기">
+          <i class="fas fa-download"></i> 내보내기
+        </button>
+      </div>
+    </header>
+
+    <!-- ============ Main Content ============ -->
+    <div class="app-main">
+
+      <!-- Step 1: Home Screen with Drawing Type Tabs -->
+      <div class="screen home-screen active" id="screenHome">
+        
+        <!-- Drawing Type Tabs -->
+        <div class="drawing-tabs-container">
+          <div class="drawing-tabs-header">
+            <h2 class="tabs-title">
+              <i class="fas fa-drafting-compass"></i>
+              도면 유형 선택
+            </h2>
+            <p class="tabs-subtitle">생성할 도면의 유형을 선택하세요. 각 유형에 맞는 전용 파이프라인이 제공됩니다.</p>
+          </div>
+
+          <div class="drawing-tabs-nav">
+            <button class="drawing-tab active" data-tab="shaft">
+              <div class="tab-icon"><i class="fas fa-cogs"></i></div>
+              <div class="tab-info">
+                <span class="tab-label">Shaft</span>
+                <span class="tab-desc">단차축 / 스핀들</span>
+              </div>
+            </button>
+            <button class="drawing-tab disabled" data-tab="flange">
+              <div class="tab-icon"><i class="fas fa-circle-notch"></i></div>
+              <div class="tab-info">
+                <span class="tab-label">Flange</span>
+                <span class="tab-desc">플랜지 (준비중)</span>
+              </div>
+              <span class="tab-badge">SOON</span>
+            </button>
+            <button class="drawing-tab disabled" data-tab="bracket">
+              <div class="tab-icon"><i class="fas fa-angle-double-right"></i></div>
+              <div class="tab-info">
+                <span class="tab-label">Bracket</span>
+                <span class="tab-desc">브라켓 (준비중)</span>
+              </div>
+              <span class="tab-badge">SOON</span>
+            </button>
+            <button class="drawing-tab disabled" data-tab="gear">
+              <div class="tab-icon"><i class="fas fa-dharmachakra"></i></div>
+              <div class="tab-info">
+                <span class="tab-label">Gear</span>
+                <span class="tab-desc">기어 (준비중)</span>
+              </div>
+              <span class="tab-badge">SOON</span>
+            </button>
+          </div>
+
+          <!-- Tab Content Panels -->
+          <div class="drawing-tab-panels">
+
+            <!-- Shaft Tab Panel -->
+            <div class="tab-panel active" id="tabPanelShaft">
+              <div class="shaft-panel-layout">
+                <!-- Left: Upload Area -->
+                <div class="shaft-upload-section">
+                  <div class="shaft-upload-zone" id="shaftUploadZone">
+                    <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                    <h3>손도면 이미지를 업로드하세요</h3>
+                    <p>축(Shaft) 형상의 손도면을 올려주세요.<br>AI가 형상을 분석하여 벡터 도면을 생성합니다.</p>
+                    <div class="supported-formats">
+                      <span class="format-badge">PNG</span>
+                      <span class="format-badge">JPG</span>
+                      <span class="format-badge">PDF</span>
+                      <span class="format-badge">BMP</span>
+                      <span class="format-badge">WEBP</span>
+                    </div>
+                    <input type="file" id="fileInput" accept="image/*,.pdf" hidden>
+                  </div>
+
+                  <!-- Upload Preview -->
+                  <div class="upload-preview" id="uploadPreview">
+                    <div class="preview-card">
+                      <div class="preview-image-wrap">
+                        <img id="previewImg" src="" alt="미리보기">
+                      </div>
+                      <div class="preview-info">
+                        <div>
+                          <div class="file-name" id="fileName">—</div>
+                          <div class="file-size" id="fileSize">—</div>
+                        </div>
+                      </div>
+                      <div class="preview-actions">
+                        <button class="btn btn-ghost" id="btnReUpload">
+                          <i class="fas fa-redo"></i> 다시 선택
+                        </button>
+                        <button class="btn btn-primary" id="btnStartAI">
+                          <i class="fas fa-magic"></i> AI 도면 생성 시작
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right: Info & Demo -->
+                <div class="shaft-info-section">
+                  <div class="shaft-info-card">
+                    <h4><i class="fas fa-info-circle"></i> Shaft 도면이란?</h4>
+                    <p>회전축, 스핀들, 단차축 등 원통형 부품의 정투상도를 생성합니다.</p>
+                    <ul class="shaft-features-list">
+                      <li><i class="fas fa-check"></i> 다중 구간 단차축 지원 (최대 20구간)</li>
+                      <li><i class="fas fa-check"></i> TAP/보어 구멍 숨은선 자동 생성</li>
+                      <li><i class="fas fa-check"></i> 키홈 + 보조 투상도 지원</li>
+                      <li><i class="fas fa-check"></i> 치수선 자동 배치</li>
+                      <li><i class="fas fa-check"></i> SVG / DXF / PDF 내보내기</li>
+                    </ul>
+                  </div>
+                  
+                  <!-- Demo Button -->
+                  <button class="btn btn-ghost demo-btn" id="btnDemoMech">
+                    <i class="fas fa-play-circle"></i> 데모 도면으로 체험하기
+                    <small>단차축 (Stepped Shaft) 3구간 예제</small>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Flange Tab Panel (placeholder) -->
+            <div class="tab-panel" id="tabPanelFlange">
+              <div class="tab-coming-soon">
+                <i class="fas fa-hard-hat"></i>
+                <h3>Flange 도면 — 준비중</h3>
+                <p>플랜지, 디스크형 부품의 정면도/측면도 생성 파이프라인이 곧 추가됩니다.</p>
+              </div>
+            </div>
+
+            <!-- Bracket Tab Panel (placeholder) -->
+            <div class="tab-panel" id="tabPanelBracket">
+              <div class="tab-coming-soon">
+                <i class="fas fa-hard-hat"></i>
+                <h3>Bracket 도면 — 준비중</h3>
+                <p>L형/U형 브라켓 등 판금 부품 도면 파이프라인이 곧 추가됩니다.</p>
+              </div>
+            </div>
+
+            <!-- Gear Tab Panel (placeholder) -->
+            <div class="tab-panel" id="tabPanelGear">
+              <div class="tab-coming-soon">
+                <i class="fas fa-hard-hat"></i>
+                <h3>Gear 도면 — 준비중</h3>
+                <p>스퍼기어, 헬리컬기어 등 기어류 도면 생성 파이프라인이 곧 추가됩니다.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: AI Processing -->
+      <div class="screen ai-screen" id="screenAI">
+        <div class="ai-processing">
+          <div class="ai-visual">
+            <div class="ai-ring"></div>
+            <div class="ai-ring-inner"></div>
+            <i class="fas fa-brain ai-icon-center"></i>
+          </div>
+          <h2>AI가 도면을 분석하고 있습니다</h2>
+          <p>손도면의 구조를 해석하여 편집 가능한 벡터 도면을 생성합니다.<br>
+          생성된 도면은 자유롭게 수정할 수 있습니다.</p>
+          <ul class="ai-steps-list" id="aiStepsList">
+            <li class="active" data-ai-step="1">
+              <i class="fas fa-spinner fa-spin"></i>
+              <span>이미지 전처리 및 노이즈 제거</span>
+            </li>
+            <li data-ai-step="2">
+              <i class="far fa-circle"></i>
+              <span>이미지 분석 + 파라미터 입력</span>
+            </li>
+            <li data-ai-step="3">
+              <i class="far fa-circle"></i>
+              <span>형상 배치 분석 + 단차/구멍 위치</span>
+            </li>
+            <li data-ai-step="4">
+              <i class="far fa-circle"></i>
+              <span>형상 초안 생성 + placeholder 배치</span>
+            </li>
+            <li data-ai-step="5">
+              <i class="far fa-circle"></i>
+              <span>self-check (형상 일치율 검증)</span>
+            </li>
+          </ul>
+          <div class="ai-progress-bar">
+            <div class="ai-progress-fill" id="aiProgressFill"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Editor -->
+      <div class="screen editor-screen" id="screenEditor">
+
+        <!-- Left Toolbar -->
+        <div class="editor-toolbar">
+          <button class="toolbar-btn active" data-tool="select" data-tooltip="선택 (V)">
+            <i class="fas fa-mouse-pointer"></i>
+          </button>
+          <button class="toolbar-btn" data-tool="move" data-tooltip="이동 (H)">
+            <i class="fas fa-hand-paper"></i>
+          </button>
+          <div class="toolbar-divider"></div>
+          <button class="toolbar-btn" data-tool="outline" data-tooltip="외형선 그리기 (W)">
+            <i class="fas fa-draw-polygon"></i>
+          </button>
+          <button class="toolbar-btn" data-tool="dimension" data-tooltip="치수선 (D)">
+            <i class="fas fa-ruler-horizontal"></i>
+          </button>
+          <button class="toolbar-btn" data-tool="text" data-tooltip="텍스트 (T)">
+            <i class="fas fa-font"></i>
+          </button>
+          <div class="toolbar-divider"></div>
+          <button class="toolbar-btn" data-tool="eraser" data-tooltip="지우기 (E)">
+            <i class="fas fa-eraser"></i>
+          </button>
+          <div class="toolbar-divider" style="margin-top:auto;"></div>
+          <button class="toolbar-btn" id="btnUndo" data-tooltip="실행취소 (Ctrl+Z)">
+            <i class="fas fa-undo"></i>
+          </button>
+          <button class="toolbar-btn" id="btnRedo" data-tooltip="다시실행 (Ctrl+Y)">
+            <i class="fas fa-redo"></i>
+          </button>
+        </div>
+
+        <!-- Canvas -->
+        <div class="editor-canvas-area">
+          <div class="canvas-container tool-select" id="canvasContainer">
+            <svg id="drawingSvg" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+              <defs>
+                <pattern id="gridSmall" width="10" height="10" patternUnits="userSpaceOnUse">
+                  <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#d4c96a" stroke-width="0.5"/>
+                </pattern>
+                <pattern id="gridLarge" width="100" height="100" patternUnits="userSpaceOnUse">
+                  <rect width="100" height="100" fill="url(#gridSmall)"/>
+                  <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#c8be5e" stroke-width="1"/>
+                </pattern>
+                <marker id="arrowStart" markerWidth="8" markerHeight="8" refX="0" refY="4" orient="auto">
+                  <path d="M 8 0 L 0 4 L 8 8" fill="none" stroke="#60a5fa" stroke-width="1"/>
+                </marker>
+                <marker id="arrowEnd" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto">
+                  <path d="M 0 0 L 8 4 L 0 8" fill="none" stroke="#60a5fa" stroke-width="1"/>
+                </marker>
+              </defs>
+              <!-- Grid Background -->
+              <rect width="100%" height="100%" fill="url(#gridLarge)" class="grid-bg"/>
+              <!-- Drawing Layer -->
+              <g id="drawingLayer" transform="translate(0,0) scale(1)">
+                <!-- 그룹은 renderer.js ensureGroups()에서 동적 생성 -->
+              </g>
+            </svg>
+          </div>
+
+          <!-- Canvas Info Bar -->
+          <div class="canvas-info-bar">
+            <span><i class="fas fa-crosshairs"></i> <span id="cursorPos">0, 0</span></span>
+            <span><i class="fas fa-search"></i> <span id="zoomLevel">100%</span></span>
+            <span><i class="fas fa-object-group"></i> <span id="elementCount">0 요소</span></span>
+            <span id="selectedInfo" style="color:var(--accent-blue);display:none;">
+              <i class="fas fa-check-circle"></i> <span id="selectedText">—</span>
+            </span>
+          </div>
+
+          <!-- Zoom Controls -->
+          <div class="zoom-controls">
+            <button class="btn-icon" id="btnZoomIn" title="확대"><i class="fas fa-plus"></i></button>
+            <div class="zoom-label" id="zoomLabelFloat">100%</div>
+            <button class="btn-icon" id="btnZoomOut" title="축소"><i class="fas fa-minus"></i></button>
+            <button class="btn-icon" id="btnZoomFit" title="맞추기" style="margin-top:4px;"><i class="fas fa-expand"></i></button>
+          </div>
+        </div>
+
+        <!-- Properties Panel -->
+        <div class="properties-panel" id="propertiesPanel">
+          <div class="panel-header">
+            <h3>속성</h3>
+            <button class="btn-icon" id="btnTogglePanel" title="패널 접기"><i class="fas fa-chevron-right"></i></button>
+          </div>
+
+          <!-- No Selection State -->
+          <div class="panel-section" id="panelNoSelection">
+            <p style="font-size:12px; color:var(--text-muted); text-align:center; padding:20px 0;">
+              요소를 선택하면<br>여기서 속성을 수정할 수 있습니다
+            </p>
+          </div>
+
+          <!-- Selection Properties -->
+          <div id="panelSelection" style="display:none;">
+            <div class="panel-section">
+              <h4>선택된 요소</h4>
+              <div class="form-row">
+                <span class="form-label">유형</span>
+                <span id="propType" style="font-size:12px;color:var(--accent-blue);font-weight:600;">—</span>
+              </div>
+              <div class="form-row">
+                <span class="form-label">ID</span>
+                <span id="propId" style="font-size:11px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">—</span>
+              </div>
+            </div>
+
+            <div class="panel-section" id="propPositionSection">
+              <h4>위치 / 크기</h4>
+              <div class="form-row">
+                <span class="form-label">X</span>
+                <input type="number" class="form-input form-input-sm" id="propX" step="1">
+                <span class="form-label" style="width:20px;text-align:center;">Y</span>
+                <input type="number" class="form-input form-input-sm" id="propY" step="1">
+              </div>
+              <div class="form-row" id="propSizeRow">
+                <span class="form-label">너비</span>
+                <input type="number" class="form-input form-input-sm" id="propW" step="1">
+                <span class="form-label" style="width:20px;text-align:center;">높이</span>
+                <input type="number" class="form-input form-input-sm" id="propH" step="1">
+              </div>
+            </div>
+
+            <div class="panel-section" id="propDimensionSection" style="display:none;">
+              <h4>치수</h4>
+              <div class="form-row">
+                <span class="form-label">값</span>
+                <input type="text" class="form-input" id="propDimValue" placeholder="예: 3,600">
+              </div>
+              <div class="form-row">
+                <span class="form-label">단위</span>
+                <select class="form-select" id="propDimUnit">
+                  <option value="mm">mm</option>
+                  <option value="m">m</option>
+                  <option value="cm">cm</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="panel-section" id="propTextSection" style="display:none;">
+              <h4>텍스트</h4>
+              <div class="form-row">
+                <span class="form-label">내용</span>
+                <input type="text" class="form-input" id="propTextContent">
+              </div>
+              <div class="form-row">
+                <span class="form-label">크기</span>
+                <input type="number" class="form-input form-input-sm" id="propFontSize" min="8" max="72" step="1">
+              </div>
+            </div>
+
+            <div class="panel-section" id="propStyleSection">
+              <h4>스타일</h4>
+              <div class="form-row">
+                <span class="form-label">선 두께</span>
+                <input type="number" class="form-input form-input-sm" id="propStrokeWidth" min="0.5" max="10" step="0.5">
+              </div>
+              <div class="form-row">
+                <span class="form-label">색상</span>
+                <input type="color" id="propColor" value="#e2e8f0" style="width:30px;height:24px;border:none;background:none;cursor:pointer;">
+                <span id="propColorHex" style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);">#e2e8f0</span>
+              </div>
+            </div>
+
+            <div class="panel-section">
+              <button class="btn btn-ghost" style="width:100%;justify-content:center;color:var(--accent-red);" id="btnDeleteElement">
+                <i class="fas fa-trash-alt"></i> 요소 삭제
+              </button>
+            </div>
+          </div>
+
+          <!-- Layers (동적 생성 — app.js updateLayersPanel) -->
+          <div class="panel-section" style="border-bottom:none;">
+            <h4>레이어</h4>
+            <ul class="layers-list" id="layersList">
+              <!-- app.js enterEditor() → updateLayersPanel()에서 동적 렌더링 -->
+              <li style="padding:12px 0;text-align:center;color:var(--text-muted);font-size:12px;">
+                도면을 열면 레이어가 표시됩니다
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ DB Screen (저장된 프로젝트 열람) ============ -->
+      <div class="screen db-screen" id="screenDB">
+        <div class="db-container">
+          <div class="db-header">
+            <div class="db-title">
+              <i class="fas fa-database"></i>
+              <h2>저장된 프로젝트</h2>
+              <span class="db-count" id="dbCount">0개</span>
+            </div>
+            <div class="db-actions">
+              <button class="btn btn-ghost" id="btnDBBack">
+                <i class="fas fa-arrow-left"></i> 돌아가기
+              </button>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div class="db-empty" id="dbEmpty">
+            <i class="fas fa-folder-open"></i>
+            <h3>저장된 프로젝트가 없습니다</h3>
+            <p>편집 화면에서 '임시저장' 버튼을 눌러 프로젝트를 저장하세요.</p>
+          </div>
+
+          <!-- Project Cards Grid -->
+          <div class="db-grid" id="dbGrid">
+            <!-- 동적 렌더링 -->
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Save Draft Modal (프로젝트명 입력) -->
+  <div class="modal-overlay" id="saveDraftModal">
+    <div class="modal save-draft-modal">
+      <h3><i class="fas fa-save" style="color:var(--accent-blue);margin-right:8px;"></i>프로젝트 임시저장</h3>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">프로젝트 이름을 입력하세요. 나중에 DB 탭에서 열람·수정할 수 있습니다.</p>
+      <div class="form-row" style="margin-bottom:16px;">
+        <input type="text" class="form-input" id="saveDraftName" placeholder="예: 단차축 A-type 시작품" style="width:100%;padding:10px 12px;font-size:14px;" autofocus>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btnCancelSaveDraft">취소</button>
+        <button class="btn btn-primary" id="btnConfirmSaveDraft"><i class="fas fa-check"></i> 저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Modal -->
+  <div class="modal-overlay" id="exportModal">
+    <div class="modal">
+      <h3><i class="fas fa-download" style="color:var(--accent-blue);margin-right:8px;"></i>도면 내보내기</h3>
+      <div class="export-options">
+        <div class="export-option" data-export="svg">
+          <i class="fas fa-bezier-curve"></i>
+          <div>
+            <div class="export-label">SVG</div>
+            <div class="export-desc">벡터 형식 — 확대/축소에 깨짐 없음</div>
+          </div>
+        </div>
+        <div class="export-option" data-export="dxf">
+          <i class="fas fa-file-export"></i>
+          <div>
+            <div class="export-label">DXF</div>
+            <div class="export-desc">AutoCAD 호환 — CAD 소프트웨어에서 편집 가능</div>
+          </div>
+        </div>
+        <div class="export-option" data-export="pdf">
+          <i class="fas fa-file-pdf"></i>
+          <div>
+            <div class="export-label">PDF</div>
+            <div class="export-desc">인쇄용 — 출력 및 공유에 적합</div>
+          </div>
+        </div>
+        <div class="export-option" data-export="json">
+          <i class="fas fa-file-code"></i>
+          <div>
+            <div class="export-label">JSON</div>
+            <div class="export-desc">구조화 데이터 — 나중에 다시 불러오기 가능</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btnCloseExport">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Scripts (v16: DB tab + temp save) -->
+  <script src="js/drawing-model.js?v=19"></script>
+  <script src="js/renderer.js?v=19"></script>
+  <script src="js/editor.js?v=19"></script>
+  <script src="js/history.js?v=19"></script>
+  <script src="js/export.js?v=19"></script>
+  <script src="js/ai-engine.js?v=19"></script>
+  <script src="js/image-analyzer.js?v=19"></script>
+  <script src="js/app.js?v=19"></script>
+</body>
+</html>
